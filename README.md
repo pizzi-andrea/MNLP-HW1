@@ -16,3 +16,9 @@ We want to use two different methods:
 
 - LM-based method
 - not LM-based
+
+
+## Project Links
+
+- [Report](https://www.overleaf.com/read/crtcwgxzjskr#7213b2)
+- [Drive Link](https://drive.google.com/drive/folders/15BuiMHZUc6q7Se1iYaa_47AGG2zlvDK4?usp=drive_link)
