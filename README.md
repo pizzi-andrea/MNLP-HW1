@@ -22,3 +22,14 @@ We want to use two different methods:
 
 - [Report](https://www.overleaf.com/read/crtcwgxzjskr#7213b2)
 - [Drive Link](https://drive.google.com/drive/folders/15BuiMHZUc6q7Se1iYaa_47AGG2zlvDK4?usp=drive_link)
+
+## Useful links
+
+### Dataset
+
+- [cultural_dataset (Hugging Face link)](https://huggingface.co/datasets/sapienzanlp/nlp2025_hw1_cultural_dataset)
+- [Login in Huggin Face (CLI)](https://huggingface.co/docs/huggingface_hub/en/guides/cli)
+
+
+### Wandb
+- TODO...
