@@ -110,6 +110,35 @@ class Wiki_high_conn:
             return
         
         return data
+    
+
+def count_references(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]]:
+        """
+        Perform a batch request to the Wikipedia API for references.
+        
+        Args:
+            queries (list[str]): List of Wikipedia entity URLs.
+            params (dict[str, str]): API parameters.
+        
+        Returns:
+            dict: The JSON response from the Wikipedia API.
+        """
+        params = {
+        "action": "query",
+        "titles": '|'.join(queries) if len(queries) > 1 else queries[0],
+        "prop": "extlinks",
+        "ellimit": "max",
+        "format": "json"
+    }
+        data = conn.get_wikipedia(queries, params=params)
+        pages = data.get("query", {}).get("pages", {})
+        num = {}
+        for page_id, page in pages.items():
+            title = page.get("title", f"page_{page_id}")
+            links = page.get("extlinks", [])
+            num[title] = len(links)
+            print(title)
+        return num
 
 
 def dominant_langs(queries: list[str], conn: Wiki_high_conn, batch: int = 1) -> dict[str, set[str]]:
@@ -228,4 +257,5 @@ if __name__ == '__main__':
     print(dominant_langs(link, conn, batch=10))
 
     print(extract_entity_name(["https://en.wikipedia.org/wiki/Human"]))
+    print(count_references(["Human"], conn))
     
