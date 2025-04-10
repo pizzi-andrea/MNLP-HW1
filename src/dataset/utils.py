@@ -46,7 +46,7 @@ class Wiki_Scrapter:
        
         self._getsite() # load wiki links
         links = {}
-        # parse and 
+        # parse and get all links
         for site_key, site_data in self.sitelinks.items():
             if site_key.endswith(self.wiki_t) and not site_key.startswith("commons"):
                 lang = site_key.replace("wiki", "")
@@ -67,7 +67,7 @@ class Wiki_Scrapter:
         self.lang = new_lang
 
     def get_title(self) -> str:
-        """Return site title in language setted"""
+        """Return site title in language set"""
         self._getsite()
         return  self.sitelinks[f'{self.lang}{self.wiki_t}']['title']
     
