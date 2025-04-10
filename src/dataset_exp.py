@@ -31,6 +31,19 @@ def extract_entity_id(url: list[str]) -> list[str]:
     return [l.strip().split("/")[-1] for l in url]
 
 
+def extract_entity_name(url: list[str]) -> list[str]:
+    """
+    Extract Wikipedia entity names from a list of URLs.
+    
+    Args:
+        url (list[str]): List of Wikipedia URLs.
+        
+    Returns:
+        list[str]: List of extracted entity names.
+    """
+    return [l.strip().split("/")[-1].replace("_", " ") for l in url]
+
+
 class Wiki_high_conn:
     """
     A high-efficiency client for accessing Wikipedia and Wikidata APIs.
@@ -136,14 +149,83 @@ def dominant_langs(queries: list[str], conn: Wiki_high_conn, batch: int = 1) -> 
 
     return out
 
+
+def langs_length(queries: list[str], conn: Wiki_high_conn, batch: int = 1) -> dict[str, set[str]]:
+    """
+    Feature extractor: Given a batch of Wikidata entity links, determines in how many
+    of the top 10 Wikimedia languages each page is available.
+
+    Top languages considered: ['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja']
+    
+    Args:
+        queries (list[str]): List of Wikidata entity URLs.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+        batch (int, optional): Batch size for API requests. Defaults to 1.
+
+    Returns:
+        dict[str, float]: A dictionary mapping entity IDs to average word count of available languages.
+    """
+    batches = split_list(queries, batch)
+    result = {}
+    out = {}
+    dominant = set(['enwiki', 'eswiki', 'frwiki', 'dewiki', 'ruwiki', 'zhwiki', 'ptwiki', 'arwiki', 'itwiki', 'jawiki'])
+    
+    # Fetch sitelinks for the provided queries
+    for bt in batches:
+        ids = extract_entity_id(bt)
+        r = conn.get_wikidata(bt, params={
+            "action": "wbgetentities",
+            "ids": "|".join(ids),
+            "props": "sitelinks",
+            "format": "json"
+        })
+        result.update(r['entities'])
+
+    # Collect titles in the dominant languages
+    for page in result:
+        q = []
+        for lang, info in result[page]['sitelinks'].items():
+            if lang in dominant:
+                title = info["title"]
+                q.append(title)
+        out[page] = q
+
+    # For each page, fetch extracts in the available languages
+    word_counts = {}
+    for page, links in out.items():
+        r = conn.get_wikipedia(links, params={
+            "action": "query",
+            "format": "json",
+            "titles": '|'.join(links),  # Join titles for batch request
+            "prop": "extracts",          # We want the text content
+            "explaintext": True          # Return text as plain text (no HTML)
+        })
+        
+        pages = r['query']['pages']
+        total_words = 0
+        valid_pages = 0
+        
+        for page_id in pages.keys():
+            extract = pages[page_id].get('extract', '')
+            if extract:
+                word_count = len(extract.split())
+                total_words += word_count
+                valid_pages = 1
+        
+        if valid_pages > 0:
+            mean_word_count = total_words // valid_pages
+            word_counts[page] = mean_word_count
+        else:
+            word_counts[page] = 0  # If no valid pages found, set word count to 0
+
+    return word_counts
+
+
 if __name__ == '__main__':
     link = ['http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947']
     conn = Wiki_high_conn()
     
     print(dominant_langs(link, conn, batch=10))
 
-
-
+    print(extract_entity_name(["https://en.wikipedia.org/wiki/Human"]))
     
-
-
