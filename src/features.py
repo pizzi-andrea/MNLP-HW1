@@ -1,6 +1,10 @@
+import pandas as pd
+import nltk
+from datasets import load_dataset
 from Connection import Wiki_high_conn
 from utils import extract_entity_name, extract_entity_id
-def count_references(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]]:
+
+def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
     Fectures Exstractor: Given a batch of Wikipedia links, 
     detterminant how many referance have each page in `queries`
@@ -12,26 +16,28 @@ def count_references(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[
     Returns:
         dict: The JSON response from the Wikipedia API.
     """
+
+    ids = queries['name']
+    ids = extract_entity_name(ids)
     params = {
         "action": "query",
-        "titles": '|'.join(queries) if len(queries) > 1 else queries[0],
         "prop": "extlinks",
         "ellimit": "max",
         "format": "json"
     }
     
-    queries = extract_entity_name(queries)
-    data = conn.get_wikipedia(queries, params=params)
+    data = conn.get_wikipedia(ids, params=params)
     pages = data.get("query", {}).get("pages", {})
-    num = {}
     for page_id, page in pages.items():
         title = page.get("title", f"page_{page_id}")
         links = page.get("extlinks", [])
-        num[title] = len(links)
-    return num
+        queries.loc[queries['name'].str.contains(title, case=False, na=False), 'reference'] = len(links)
+    
+    
+    return queries
 
 
-def dominant_langs(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]]:
+def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[str]]:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
     of the top 10 Wikimedia languages each page is available.
@@ -51,26 +57,31 @@ def dominant_langs(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[st
     out = {}
     dominant = set(['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja'])
     
-    ids = extract_entity_id(queries)
+    ids = queries['item']
+    ids = extract_entity_id(ids)
+    
     r = conn.get_wikidata(ids, params={
         "action": "wbgetentities",
-        "ids": "|".join(ids),
         "props": "sitelinks",
+        "ids": "|".join(ids),
         "format": "json"
     })  # r['entities'] => dict{ id_page: {sitelinks} }
     
-    result =r['entities']
+    
+    result =r.get('entities', {})
 
     for page in result:
+        
         sl = list(result[page]['sitelinks'].keys())
         lg = [l.removesuffix('wiki') for l in sl] 
         lang_av = dominant.intersection(lg)
         out[page] = lang_av
+        queries.loc[queries['item'].str.contains(page, case=False, na=False), 'languages'] = len(lang_av)
+    
+    return out
 
-    return out # TODO: may convert  one numeric value using hash function
 
-
-def langs_length(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]]:
+def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[str]]:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
     of the top 10 Wikimedia languages each page is available.
@@ -88,12 +99,13 @@ def langs_length(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]
     
     result = {}
     out = {}
-    dominant = set(['enwiki', 'eswiki', 'frwiki', 'dewiki', 'ruwiki', 'zhwiki', 'ptwiki', 'arwiki', 'itwiki', 'jawiki'])
+    dominant = set(['enwiki', 'eswiki', 'frwiki', 'dewiki', 'ptwiki', 'itwiki'])
     
     
     # get wikimedia ids
-    ids = extract_entity_id(queries)
-
+    ids = queries['item']
+    ids = extract_entity_name(ids)
+    
     # perform query using Wikidata APIs
     r = conn.get_wikidata(ids, params={
         "action": "wbgetentities",
@@ -102,7 +114,7 @@ def langs_length(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]
         "format": "json"
     })
     
-    
+  
     result = r['entities']
 
     # Collect titles in the dominant languages
@@ -131,8 +143,8 @@ def langs_length(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]
                 "redirects": True,             # expand links
                 "exsectionformat": "plain"     # plaintext
             }, lang=l) # type: ignore
-
-            pages.update(r['query']['pages'])
+            
+            pages.update(r.get('query', {}).get('pages', {}))
         
         total_words = 0
         valid_pages = 0
@@ -141,27 +153,32 @@ def langs_length(queries: list[str], conn: Wiki_high_conn) -> dict[str, set[str]
         for page_id in pages.keys():
             extract = pages[page_id].get('extract', '')
             if extract:
-                word_count = len(extract.split())
+                word_count = len(nltk.word_tokenize(extract))
                 total_words += word_count
                 valid_pages += 1
         
        # compute standard mean 
         if valid_pages > 0:
-            mean_word_count = total_words // valid_pages
-            word_counts[page] = mean_word_count
+            mean_word_count = total_words //valid_pages
+            
+            queries.loc[queries['item'].str.contains(page, case=False, na=False), 'length_lan'] = mean_word_count
         else:
-            word_counts[page] = 0  # If no valid pages found, set word count to 0
+           queries.loc[queries['item'].str.contains(page, case=False, na=False), 'length_lan'] = 0  # If no valid pages found, set word count to 0
 
     return word_counts
 
 if __name__ == '__main__':
     link = ['http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947']
     conn = Wiki_high_conn()
+    dataset_t = load_dataset('sapienzanlp/nlp2025_hw1_cultural_dataset',)['validation'].to_pandas().loc[50:56]  # type: ignore
     
-    print(dominant_langs(link, conn))
 
-    print(extract_entity_name(["https://en.wikipedia.org/wiki/Human"]))
-    print(count_references(["https://en.wikipedia.org/wiki/Human"], conn))
-    print(langs_length(["http://www.wikidata.org/entity/Q42"], conn))
-
+    #extract_entity_name(["https://en.wikipedia.org/wiki/Human"])
+    count_references(dataset_t, conn)
+    dominant_langs(dataset_t, conn)
+    langs_length(dataset_t, conn)
+    print(dataset_t)
     conn.clear_cache()
+    dataset_t.to_csv('prova.csv')
+
+    

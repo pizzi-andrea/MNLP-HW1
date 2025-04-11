@@ -65,7 +65,7 @@ class Wiki_high_conn:
         url = "https://www.wikidata.org/w/api.php"
         
         params['format'] = 'json'
-        params['titles'] = '|'.join(queries) if len(queries) > 1 else queries[0]
+        params['titles'] = '|'.join(queries)
         try:
             response = requests.get(url, params=params)
             data = response.json()

@@ -1,3 +1,4 @@
+import pandas as pd
 def split_list(lst, n):
     """
     Split a list into `n` sublists as evenly as possible.
@@ -13,7 +14,7 @@ def split_list(lst, n):
     return [lst[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
 
 
-def extract_entity_id(url: list[str]) -> list[str]:
+def extract_entity_id(url: pd.DataFrame) -> list[str]:
     """
     Extract Wikidata entity IDs from a list of URLs.
     
@@ -26,7 +27,7 @@ def extract_entity_id(url: list[str]) -> list[str]:
     return [l.strip().split("/")[-1] for l in url]
 
 
-def extract_entity_name(url: list[str]) -> list[str]:
+def extract_entity_name(url:pd.Series) -> list[str]:
     """
     Extract Wikipedia entity names from a list of URLs.
     
