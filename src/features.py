@@ -1,8 +1,9 @@
 import pandas as pd
+import networkx as nx
 import nltk
 from datasets import load_dataset
 from Connection import Wiki_high_conn
-from utils import extract_entity_name, extract_entity_id
+from utils import extract_entity_name, extract_entity_id, BFS_Links
 
 def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
@@ -167,17 +168,30 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
 
     return word_counts
 
+def G_factor(queries: pd.DataFrame, conn:Wiki_high_conn) -> dict[str,float]:
+    
+    r = {}
+    for q in queries['name']:
+        g  = BFS_Links(q, 10, 2)
+        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G'] = g
+        r[q] = g
+    
+    return r
+        
+
+
 if __name__ == '__main__':
     link = ['http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947']
     conn = Wiki_high_conn()
     dataset_t = load_dataset('sapienzanlp/nlp2025_hw1_cultural_dataset',)['validation'].to_pandas().loc[50:56]  # type: ignore
     
-
     #extract_entity_name(["https://en.wikipedia.org/wiki/Human"])
     count_references(dataset_t, conn)
     dominant_langs(dataset_t, conn)
     langs_length(dataset_t, conn)
+    G_factor(dataset_t, conn)
     print(dataset_t)
+    print(dataset_t['label'])
     conn.clear_cache()
     dataset_t.to_csv('prova.csv')
 
