@@ -120,6 +120,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
 
     # Collect titles in the dominant languages
     for page in result:
+        
         q = []
         for lang, info in result[page]['sitelinks'].items():
             if lang in dominant:
@@ -141,7 +142,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
                 "titles": [link],              # pages id
                 "prop": "extracts",            # required property
                 "explaintext": True,           # get plaintext
-                "redirects": True,             # expand links
+                "exintro": True,             # expand links
                 "exsectionformat": "plain"     # plaintext
             }, lang=l) # type: ignore
             
@@ -149,7 +150,6 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
         
         total_words = 0
         valid_pages = 0
-        
         # for each page write in different language count words
         for page_id in pages.keys():
             extract = pages[page_id].get('extract', '')
@@ -168,7 +168,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
 
     return word_counts
 
-def G_factor(queries: pd.DataFrame, conn:Wiki_high_conn) -> dict[str,float]:
+def G_factor(queries: pd.DataFrame) -> dict[str,float]:
     
     r = {}
     for q in queries['name']:
@@ -189,7 +189,7 @@ if __name__ == '__main__':
     count_references(dataset_t, conn)
     dominant_langs(dataset_t, conn)
     langs_length(dataset_t, conn)
-    G_factor(dataset_t, conn)
+    G_factor(dataset_t)
     print(dataset_t)
     print(dataset_t['label'])
     conn.clear_cache()
