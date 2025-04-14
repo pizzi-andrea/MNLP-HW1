@@ -18,13 +18,13 @@ class Wiki_high_conn:
         """
         self._default_lang = default_lang
         requests_cache.clear()
-        requests_cache.install_cache('wikidata_cache', expire_after=3600)
-        requests_cache.install_cache('wikipedia_cache', expire_after=3600)
+        requests_cache.install_cache('wiki_cache', expire_after=3600, backend='sqlite')
+        
 
     def set_lang(self,lang:str) -> None:
         self._default_lang = lang
 
-    def get_wikipedia(self, queries: list[str], params: dict[str, str], lang:str='') -> list[Any] | Any:
+    def get_wikipedia(self, queries: list[str], params: dict[str, str], lang:str='') -> dict[str, Any]:
         """
         Perform a batch request to Wikipedia's API.
         
@@ -47,11 +47,11 @@ class Wiki_high_conn:
             response.raise_for_status()
         except requests.HTTPError as err:
             print(f'err: {err}')
-            return
+            return {}
         
         return data
 
-    def get_wikidata(self, queries: list[str], params: dict[str, str]) -> list[Any] | Any:
+    def get_wikidata(self, queries: list[str], params: dict[str, str]) -> dict[str, Any]:
         """
         Perform a batch request to the Wikidata API.
         
@@ -81,8 +81,4 @@ class Wiki_high_conn:
         Clear the currently installed cache (if any)
         """
         requests_cache.clear()
-        if path.PosixPath('./wikidata_cache.sqlite').exists():
-            os.remove("wikidata_cache.sqlite")
-        if path.PosixPath('./wikimedia_cache.sqlite').exists:
-            os.remove("wikipedia_cache.sqlite")
         

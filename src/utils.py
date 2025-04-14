@@ -190,37 +190,12 @@ def BFS_Links(title: str, limit: int, max_depth: int) -> nx.DiGraph:
                 
         # Segna il nodo come visitato (in-place modification)
         G.nodes[base]['visited'] = True
-    rec = 0
-    for node in G.nodes:
-        rec += G.nodes[node].get('count', 0)
     
-    rec //= len(G.nodes)
-    # Calcola le distanze pesate da start_node
-    lengths = nx.single_source_dijkstra_path_length(G.to_undirected(), title)
+    return G
 
-    # Nodo più lontano e distanza
-    farthest_node = max(lengths, key=lengths.get)
-
-    lengths = nx.single_source_dijkstra_path_length(G.to_undirected(), farthest_node)
-    max_node = max(lengths, key=lengths.get)
-
-    nodes = G.number_of_nodes()
-    
-    diameter =  lengths[max_node]
-    cliques = list(nx.find_cliques(G.to_undirected()))
-   
-
-# Conta quante clique coinvolgono ogni nodo
-    node_clique_count = defaultdict(int)
-
-    for clique in cliques:
-        for node in clique:
-            node_clique_count[node] += 1
-
-    # Media per nodo
-    mean_clique = sum(node_clique_count.values()) / len(G.nodes)
-    
-    return (nodes*diameter) / (mean_clique*rec)
+def batch_generator(df:pd.DataFrame, batch_size:int):
+    for i in range(0, len(df), batch_size):
+        yield df.iloc[i:i+batch_size]
 
 # Esempio di test
 if __name__ == "__main__":

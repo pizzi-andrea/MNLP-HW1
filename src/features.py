@@ -1,6 +1,9 @@
+from collections import defaultdict
 import pandas as pd
 import networkx as nx
 import nltk
+import numpy as np
+from tqdm import tqdm
 from datasets import load_dataset
 from Connection import Wiki_high_conn
 from utils import extract_entity_name, extract_entity_id, BFS_Links
@@ -29,7 +32,7 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
     
     data = conn.get_wikipedia(ids, params=params)
     pages = data.get("query", {}).get("pages", {})
-    for page_id, page in pages.items():
+    for page_id, page in tqdm(pages.items(), desc='counting number of referances'):
         title = page.get("title", f"page_{page_id}")
         links = page.get("extlinks", [])
         queries.loc[queries['name'].str.contains(title, case=False, na=False), 'reference'] = len(links)
@@ -71,7 +74,7 @@ def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set
     
     result =r.get('entities', {})
 
-    for page in result:
+    for page in tqdm(result, desc='counting pages languages'):
         
         sl = list(result[page]['sitelinks'].keys())
         lg = [l.removesuffix('wiki') for l in sl] 
@@ -119,7 +122,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
     result = r['entities']
 
     # Collect titles in the dominant languages
-    for page in result:
+    for page in tqdm(result, desc='enumerate languages...'):
         
         q = []
         for lang, info in result[page]['sitelinks'].items():
@@ -168,13 +171,48 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
 
     return word_counts
 
+
+
 def G_factor(queries: pd.DataFrame) -> dict[str,float]:
     
     r = {}
-    for q in queries['name']:
-        g  = BFS_Links(q, 10, 2)
-        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G'] = g
-        r[q] = g
+    for q in tqdm(queries['name'], desc='compute G factor'):
+        G  = BFS_Links(q, 5, 3)
+    
+        reccurent_nodes = 0
+        for node in G.nodes:
+            reccurent_nodes += G.nodes[node].get('count', 0)
+        
+        reccurent_nodes //= len(G.nodes)
+        # Calcola le distanze pesate da start_node
+        lengths = nx.single_source_dijkstra_path_length(G.to_undirected(), q)
+
+        # Nodo più lontano e distanza
+        farthest_node = max(lengths, key=lengths.get)
+
+        lengths = nx.single_source_dijkstra_path_length(G.to_undirected(), farthest_node)
+
+        nodes = G.number_of_nodes()
+       
+        page_rank = nx.pagerank(G).get(q, 0)
+        mean_pr = np.median(np.array(list(nx.pagerank(G).values())))
+        cliques = list(nx.find_cliques(G.to_undirected()))
+        num_cliques = len(cliques)
+       
+
+        # compute G factor
+        gf = mean_pr
+        
+        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_mean_pr'] = mean_pr # type: ignore
+        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_nodes'] = nodes
+        #queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_diameter'] = diameter
+        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_num_cliques'] = num_cliques
+        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_rank'] = page_rank
+        
+        
+        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G'] = (mean_pr + nodes)/(num_cliques)
+
+        r[q] = gf
     
     return r
         
@@ -183,15 +221,15 @@ def G_factor(queries: pd.DataFrame) -> dict[str,float]:
 if __name__ == '__main__':
     link = ['http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947']
     conn = Wiki_high_conn()
-    dataset_t = load_dataset('sapienzanlp/nlp2025_hw1_cultural_dataset',)['validation'].to_pandas().loc[50:56]  # type: ignore
+    dataset_t = load_dataset('sapienzanlp/nlp2025_hw1_cultural_dataset',)['validation'].to_pandas().loc[90:100]  # type: ignore
     
     #extract_entity_name(["https://en.wikipedia.org/wiki/Human"])
     count_references(dataset_t, conn)
     dominant_langs(dataset_t, conn)
     langs_length(dataset_t, conn)
     G_factor(dataset_t)
-    print(dataset_t)
-    print(dataset_t['label'])
+    #print(dataset_t)
+    print(dataset_t[['label','G_mean_pr', 'G_nodes', 'G_diameter', 'G_num_cliques', 'G_rank', 'G']])
     conn.clear_cache()
     dataset_t.to_csv('prova.csv')
 
