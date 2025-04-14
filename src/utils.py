@@ -20,6 +20,7 @@ def split_list(lst, n):
     return [lst[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
 
 
+
 def extract_entity_id(url: pd.DataFrame) -> list[str]:
     """
     Extract Wikidata entity IDs from a list of URLs.

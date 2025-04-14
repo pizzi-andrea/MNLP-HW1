@@ -21,6 +21,7 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
         dict: The JSON response from the Wikipedia API.
     """
 
+    
     ids = queries['name']
     ids = extract_entity_name(ids)
     params = {
@@ -32,10 +33,11 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
     
     data = conn.get_wikipedia(ids, params=params)
     pages = data.get("query", {}).get("pages", {})
-    for page_id, page in tqdm(pages.items(), desc='counting number of referances'):
+    for page_id, page in pages.items():
         title = page.get("title", f"page_{page_id}")
         links = page.get("extlinks", [])
-        queries.loc[queries['name'].str.contains(title, case=False, na=False), 'reference'] = len(links)
+        
+        queries.loc[queries['name'].str.contains(title, case=False, na=False, regex=False), 'reference'] = len(links)
     
     
     return queries
@@ -210,7 +212,7 @@ def G_factor(queries: pd.DataFrame) -> dict[str,float]:
         queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_rank'] = page_rank
         
         
-        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G'] = (mean_pr + nodes)/(num_cliques)
+        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G'] = (mean_pr + nodes)/(num_cliques) # type: ignore
 
         r[q] = gf
     
