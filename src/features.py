@@ -3,7 +3,6 @@ import pandas as pd
 import networkx as nx
 import nltk
 import numpy as np
-from tqdm import tqdm
 from datasets import load_dataset
 from Connection import Wiki_high_conn
 from utils import extract_entity_name, extract_entity_id, BFS_Links
@@ -43,7 +42,7 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
     return queries
 
 
-def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[str]]:
+def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
     of the top 10 Wikimedia languages each page is available.
@@ -76,7 +75,7 @@ def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set
     
     result =r.get('entities', {})
 
-    for page in tqdm(result, desc='counting pages languages'):
+    for page in result:
         
         sl = list(result[page]['sitelinks'].keys())
         lg = [l.removesuffix('wiki') for l in sl] 
@@ -84,10 +83,10 @@ def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set
         out[page] = lang_av
         queries.loc[queries['item'].str.contains(page, case=False, na=False), 'languages'] = len(lang_av)
     
-    return out
+    return queries
 
 
-def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[str]]:
+def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
     of the top 10 Wikimedia languages each page is available.
@@ -124,7 +123,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
     result = r['entities']
 
     # Collect titles in the dominant languages
-    for page in tqdm(result, desc='enumerate languages...'):
+    for page in result:
         
         q = []
         for lang, info in result[page]['sitelinks'].items():
@@ -171,52 +170,43 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> dict[str, set[s
         else:
            queries.loc[queries['item'].str.contains(page, case=False, na=False), 'length_lan'] = 0  # If no valid pages found, set word count to 0
 
-    return word_counts
+    return queries
 
 
 
-def G_factor(queries: pd.DataFrame) -> dict[str,float]:
-    
-    r = {}
-    for q in tqdm(queries['name'], desc='compute G factor'):
-        G  = BFS_Links(q, 5, 3)
-    
-        reccurent_nodes = 0
-        for node in G.nodes:
-            reccurent_nodes += G.nodes[node].get('count', 0)
+def G_factor(queries: pd.DataFrame, depth:int, limit:int) -> pd.DataFrame:
+    # Per ogni query nel DataFrame
+    for q in queries['name']:
+        G = BFS_Links(q, limit, depth)
         
-        reccurent_nodes //= len(G.nodes)
-        # Calcola le distanze pesate da start_node
-        lengths = nx.single_source_dijkstra_path_length(G.to_undirected(), q)
-
-        # Nodo più lontano e distanza
-        farthest_node = max(lengths, key=lengths.get)
-
-        lengths = nx.single_source_dijkstra_path_length(G.to_undirected(), farthest_node)
-
-        nodes = G.number_of_nodes()
-       
-        page_rank = nx.pagerank(G).get(q, 0)
-        mean_pr = np.median(np.array(list(nx.pagerank(G).values())))
-        cliques = list(nx.find_cliques(G.to_undirected()))
-        num_cliques = len(cliques)
-       
-
-        # compute G factor
-        gf = mean_pr
+        # Calcola il numero medio di occorrenze (nodi ricorrenti)
+        total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)
+        avg_count = total_count // G.number_of_nodes() if G.number_of_nodes() else 0
         
-        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_mean_pr'] = mean_pr # type: ignore
-        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_nodes'] = nodes
-        #queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_diameter'] = diameter
-        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_num_cliques'] = num_cliques
-        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G_rank'] = page_rank
+        # Converte il grafo in versione non diretta una sola volta
+        UG = G.to_undirected()
         
+        # Numero di nodi nel grafo
+        num_nodes = G.number_of_nodes()
         
-        queries.loc[queries['name'].str.contains(q, case=False, na=False), 'G'] = (mean_pr + nodes)/(num_cliques) # type: ignore
+        # Calcola il PageRank una sola volta
+        pr = nx.pagerank(G)
+        page_rank = pr.get(q, 0)
+        # Usa la mediana dei PageRank come "G_mean_pr"
+        pr_values = list(pr.values())
+        mean_pr = np.median(pr_values) if pr_values else 0
+        
+        # Calcolo del numero delle clique in UG: iteriamo direttamente sul generatore
+        num_cliques = sum(1 for _ in nx.find_cliques(UG))
+        
+        # Crea una maschera per aggiornare le righe che contengono il nome 'q'
+        mask = queries['name'].str.contains(q, case=False, regex=False, na=False)
+        queries.loc[mask, 'G_mean_pr'] = mean_pr
+        queries.loc[mask, 'G_nodes'] = num_nodes
+        queries.loc[mask, 'G_num_cliques'] = num_cliques
+        queries.loc[mask, 'G_rank'] = page_rank
+    return queries
 
-        r[q] = gf
-    
-    return r
         
 
 
