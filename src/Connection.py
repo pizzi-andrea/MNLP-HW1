@@ -19,6 +19,7 @@ class Wiki_high_conn:
         self._default_lang = default_lang
         requests_cache.clear()
         requests_cache.install_cache('wiki_cache', expire_after=3600, backend='sqlite')
+        self.session = requests.Session()
         
 
     def set_lang(self,lang:str) -> None:
@@ -42,7 +43,7 @@ class Wiki_high_conn:
         params['format'] = 'json'
         params['titles'] = '|'.join(queries) if len(queries) > 1 else queries[0]
         try:
-            response = requests.get(url, params=params)
+            response = self.session.get(url, params=params)
             data = response.json()
             response.raise_for_status()
         except requests.HTTPError as err:
@@ -67,7 +68,7 @@ class Wiki_high_conn:
         params['format'] = 'json'
         params['titles'] = '|'.join(queries)
         try:
-            response = requests.get(url, params=params)
+            response = self.session.get(url, params=params)
             data = response.json()
             response.raise_for_status()
         except requests.HTTPError as err:
