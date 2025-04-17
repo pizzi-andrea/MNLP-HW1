@@ -2,6 +2,7 @@ from collections import defaultdict
 import pandas as pd
 import networkx as nx
 import nltk
+from matplotlib import pyplot as plt
 import numpy as np
 from datasets import load_dataset
 from Connection import Wiki_high_conn
@@ -40,7 +41,6 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
     
     
     return queries
-
 
 def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
@@ -84,7 +84,6 @@ def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
         queries.loc[queries['item'].str.contains(page, case=False, na=False), 'languages'] = len(lang_av)
     
     return queries
-
 
 def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
@@ -172,12 +171,10 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
 
     return queries
 
-
-
 def G_factor(queries: pd.DataFrame, depth:int, limit:int) -> pd.DataFrame:
     # Per ogni query nel DataFrame
     for q in queries['name']:
-        G = BFS_Links(q, limit, depth)
+        G = BFS_Links(q, limit, depth, max_runtime=0.05)
         
         # Calcola il numero medio di occorrenze (nodi ricorrenti)
         total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)
@@ -188,6 +185,12 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int) -> pd.DataFrame:
         
         # Numero di nodi nel grafo
         num_nodes = G.number_of_nodes()
+        #plt.figure(figsize=(10, 10))
+        #pos = nx.spring_layout(G)
+        #nx.draw(G,pos=pos, with_labels=True, node_size=50, node_color="skyblue", font_size=10, font_weight="bold")
+        #plt.title(f"Graph of Wikipedia Links for ")
+        #plt.savefig('graph.png')
+        
         
         # Calcola il PageRank una sola volta
         pr = nx.pagerank(G)
@@ -205,6 +208,7 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int) -> pd.DataFrame:
         queries.loc[mask, 'G_nodes'] = num_nodes
         queries.loc[mask, 'G_num_cliques'] = num_cliques
         queries.loc[mask, 'G_rank'] = page_rank
+        queries.loc[mask, 'G_avg'] = avg_count
     return queries
 
         
