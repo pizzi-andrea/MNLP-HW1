@@ -174,7 +174,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
 def G_factor(queries: pd.DataFrame, depth:int, limit:int) -> pd.DataFrame:
     # Per ogni query nel DataFrame
     for q in queries['name']:
-        G = BFS_Links(q, limit, depth, max_runtime=0.05)
+        G = BFS_Links(q, limit, depth, max_runtime=1.00)
         
         # Calcola il numero medio di occorrenze (nodi ricorrenti)
         total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)

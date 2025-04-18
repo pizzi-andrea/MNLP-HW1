@@ -5,8 +5,8 @@ import networkx as nx
 import time
 from collections import deque
 from random import shuffle
-from collections import defaultdict
 from bs4 import BeautifulSoup
+from urllib.parse import quote
 
 
 
@@ -48,6 +48,12 @@ def extract_entity_name(url:pd.Series) -> list[str]:
     """
     return [l.strip().split("/")[-1].replace("_", " ") for l in url]
 
+import time
+from collections import deque
+import requests
+from bs4 import BeautifulSoup
+import networkx as nx
+
 def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None) -> nx.DiGraph:
     """
     Esegue una ricerca BFS sui link di Wikipedia, a partire dal titolo fornito.
@@ -60,77 +66,88 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
     G = nx.DiGraph()
     response_cache = {}
     session = requests.Session()
+
     # Aggiunge il nodo iniziale
     G.add_node(title, count=1, visited=False)
-
-    queue = deque()
-    queue.append((title, max_depth))
-
-    
+    queue = deque([(title, max_depth)])
+    time_global = time.time()
 
     while queue:
-
         base, depth = queue.popleft()
 
-        # Salta se la profondità è 0 o se è già stato visitato
+        # Controllo runtime
+
+        # Salta se profondità 0 o già visitato
         if depth <= 0 or G.nodes[base].get('visited', False):
             continue
 
-        # Recupera i link
+        # Ottieni link from cache o API
         if base in response_cache:
             links = response_cache[base]
         else:
-
-            
+            # Prepara titolo per API: sostituisci spazi con underscore, lascia comma
+            encoded_title = base.replace(" ", "_")
             url = "https://en.wikipedia.org/w/api.php"
             params = {
                 "action": "parse",
-                "page": base,
+                "page": encoded_title,
                 "prop": "text",
                 "format": "json"
             }
+
             try:
-                start_time = time.time()
+                time_global = time.time()
                 response = session.get(url, params=params, timeout=10)
                 response.raise_for_status()
                 data = response.json()
-                
-                html = data["parse"]["text"]["*"]
+                # Controllo presenza campo 'parse'
+                time_current = time.time()
+                if  time_current - time_global > max_runtime:
 
-                # Usa BeautifulSoup per estrarre link visibili
-                soup = BeautifulSoup(html, "lxml")  # usa "lxml" per migliori performance
+                    print(f'drop high lat connesion:{time_current - time_global}')
+                    G.nodes[base]['visited'] = True
+                    
+                    continue
+
+                
+
+
+                if "parse" not in data or "text" not in data["parse"] or "*" not in data["parse"]["text"]:
+                    print(f"Pagina non parsabile o assente per '{encoded_title}'")
+                    #print(data)
+                    response_cache[base] = []
+                    continue
+
+                html = data["parse"]["text"]["*"]
+                soup = BeautifulSoup(html, "lxml")
                 content_div = soup.find("div", class_="mw-parser-output")
 
                 links = []
                 seen_titles = set()
-
                 if content_div:
                     for a in content_div.find_all("a", href=True):
                         href = a["href"]
-                        # Filtra i link interni a Wikipedia, escludendo quelli con ":" e "#" (namespace non di primo livello)
                         if href.startswith("/wiki/") and (":" not in href and "#" not in href):
-                            title = a.get("title")
-                            if title and title not in seen_titles:
-                                links.append(title)
-                                seen_titles.add(title)
+                            title_link = a.get("title")
+                            if title_link and title_link not in seen_titles:
+                                links.append(title_link)
+                                seen_titles.add(title_link)
                                 if len(links) >= limit:
                                     break
-                if time.time() - start_time > 0.8:
-                    break
-                #print(f'response get in {time.time() - start_time}')
+
                 response_cache[base] = links
 
             except requests.exceptions.HTTPError as http_err:
                 print(f"HTTP error su '{base}': {http_err}")
+                response_cache[base] = []
                 continue
             except requests.exceptions.Timeout:
                 print(f"Request timed out for '{base}'.")
+                response_cache[base] = []
                 continue
             except requests.exceptions.RequestException as err:
                 print(f"Request error for '{base}': {err}")
-                continue
-            except (ValueError, KeyError) as json_err:
-                print(f"JSON parsing error for '{base}': {json_err}")
+                response_cache[base] = []
                 continue
 
         # Aggiunge i link al grafo e alla coda
@@ -146,9 +163,11 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
             if not G.nodes[link]['visited']:
                 queue.append((link, depth - 1))
 
-        # Segna come visitato
+        # Marca come visitato
         G.nodes[base]['visited'] = True
+
     return G
+
 
 def batch_generator(df:pd.DataFrame, batch_size:int):
     for i in range(0, len(df), batch_size):
