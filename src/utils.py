@@ -98,23 +98,26 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
                 html = data["parse"]["text"]["*"]
 
                 # Usa BeautifulSoup per estrarre link visibili
-                soup = BeautifulSoup(html, "html.parser")
+                soup = BeautifulSoup(html, "lxml")  # usa "lxml" per migliori performance
                 content_div = soup.find("div", class_="mw-parser-output")
 
                 links = []
+                seen_titles = set()
+
                 if content_div:
                     for a in content_div.find_all("a", href=True):
                         href = a["href"]
-                        # Filtra solo link interni a Wikipedia (namespace 0)
-                        if href.startswith("/wiki/") and not any(ns in href for ns in [":", "#"]):
+                        # Filtra i link interni a Wikipedia, escludendo quelli con ":" e "#" (namespace non di primo livello)
+                        if href.startswith("/wiki/") and (":" not in href and "#" not in href):
                             title = a.get("title")
-                            if title and title not in links:
+                            if title and title not in seen_titles:
                                 links.append(title)
+                                seen_titles.add(title)
                                 if len(links) >= limit:
                                     break
-                if time.time() - start_time > 0.5:
+                if time.time() - start_time > 0.8:
                     break
-                print(f'response get in {time.time() - start_time}')
+                #print(f'response get in {time.time() - start_time}')
                 response_cache[base] = links
 
             except requests.exceptions.HTTPError as http_err:
