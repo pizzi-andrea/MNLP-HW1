@@ -1,8 +1,8 @@
-import requests_cache
-import requests
-import os
-import pathlib as path
 from typing import Any
+
+import requests
+import requests_cache
+
 
 class Wiki_high_conn:
     """
@@ -18,11 +18,18 @@ class Wiki_high_conn:
         """
         self._default_lang = default_lang
         requests_cache.clear()
-        requests_cache.install_cache('wiki_cache', expire_after=3600, backend='sqlite')
-        self.session = requests.Session()
-        
+        requests_cache.install_cache(
+            'wiki_cache', 
+            backend='sqlite',
+            allowable_methods=('GET',),
+            cache_control=True
+        )
+        self.session = requests_cache.CachedSession()
 
     def set_lang(self,lang:str) -> None:
+        """
+        set default request lang
+        """
         self._default_lang = lang
 
     def get_wikipedia(self, queries: list[str], params: dict[str, str], lang:str='') -> dict[str, Any]:
@@ -39,8 +46,8 @@ class Wiki_high_conn:
         if lang == '':
             lang = self._default_lang
         url = f"https://{lang}.wikipedia.org/w/api.php"
-        params['action'] = 'query'
-        params['format'] = 'json'
+        params['action'] = 'query' if not params.get('action') else params['action']
+        params['format'] = 'json'  if not params.get('format') else params['format']
         params['titles'] = '|'.join(queries) if len(queries) > 1 else queries[0]
         try:
             response = self.session.get(url, params=params)
@@ -82,4 +89,3 @@ class Wiki_high_conn:
         Clear the currently installed cache (if any)
         """
         requests_cache.clear()
-        
