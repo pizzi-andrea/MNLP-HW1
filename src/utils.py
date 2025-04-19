@@ -1,13 +1,20 @@
-import pandas as pd
-import re
+import asyncio
+import time
+import aiohttp
 import requests
 import networkx as nx
-import time
+import pandas as pd
+import requests
+from matplotlib import pyplot as plt
 from collections import deque
-from random import shuffle
 from bs4 import BeautifulSoup
-from urllib.parse import quote
+from Connection import Wiki_high_conn
+from collections import deque
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from lxml import html
 
+from urllib.parse import quote, unquote
 
 
 def split_list(lst, n):
@@ -48,11 +55,121 @@ def extract_entity_name(url:pd.Series) -> list[str]:
     """
     return [l.strip().split("/")[-1].replace("_", " ") for l in url]
 
-import time
-from collections import deque
-import requests
-from bs4 import BeautifulSoup
-import networkx as nx
+def __parse_wikipedia_links(title, session, limit):
+    encoded_title = title.replace(" ", "_")
+    url = "https://en.wikipedia.org/w/api.php"
+    params = {
+        "action": "parse",
+        "page": encoded_title,
+        "prop": "text",
+        "format": "json"
+    }
+
+    try:
+        response = session.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        if "parse" not in data or "text" not in data["parse"] or "*" not in data["parse"]["text"]:
+            return title, []
+
+        html = data["parse"]["text"]["*"]
+        soup = BeautifulSoup(html, "lxml")
+        content_div = soup.find("div", class_="mw-parser-output")
+
+        links = []
+        seen = set()
+        if content_div:
+            for a in content_div.find_all("a", href=True):
+                href = a["href"]
+                if href.startswith("/wiki/") and ":" not in href and "#" not in href:
+                    title_link = a.get("title")
+                    if title_link and title_link not in seen:
+                        links.append(title_link)
+                        seen.add(title_link)
+
+        links.sort()
+        return title, links[:limit]
+    except Exception:
+        return title, []
+
+def parse_wikipedia_links(node, session, limit):
+    """
+    Calls parse_wikipedia_links(node, session, limit).  
+    On ANY exception (network error, JSON error, None return), returns (node, []).
+    """
+    try:
+        result = __parse_wikipedia_links(node, session, limit)
+        # guard against somebody returning None
+        if not (isinstance(result, tuple) and len(result) == 2):
+            raise ValueError(f"Unexpected return from parse_wikipedia_links: {result!r}")
+        return result
+    except Exception as e:
+        print(f"⚠️ parse failed for {node}: {e!r}")
+        # return an empty list of links so we can continue
+        return node, []
+
+def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_workers=16):
+    G = nx.DiGraph()
+    G.add_node(start_title, count=1)
+    
+    visited = {start_title}
+    queue = deque([(start_title, 0)])
+    session = requests.Session()
+    start_time = time.time()
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # futures: mapping da Future a (node, depth)
+        futures = {}
+        
+        # Continua finché c'è qualcosa da inviare o da attendere
+        while queue or futures:
+            # Pump: sottometti fino a max_workers task
+            while queue and len(futures) < max_workers:
+                node, depth = queue.popleft()
+                
+                # Controllo runtime
+                if max_runtime and (time.time() - start_time) > max_runtime:
+                    queue.clear()
+                    break
+                
+                # Sottometti il parsing di `node`
+                future = executor.submit(parse_wikipedia_links, node, session, limit)
+                futures[future] = (node, depth)
+            
+            if not futures:
+                break  # niente in corso e nulla in coda
+            
+            # Drain: processa il primo task completato
+            done, _ = next(as_completed(futures), (None, None)), None
+            future = done if isinstance(done, type(next(iter(futures)))) else done[0]
+            base, depth = futures.pop(future)
+            
+            try:
+                base_title, links = future.result()
+            except Exception as e:
+                print(f"Errore sul nodo {base}: {e}")
+                continue
+            
+            # Aggiorna grafo e popola la coda per il livello successivo
+            for link in links:
+                if not G.has_node(link):
+                    G.add_node(link, count=1)
+                else:
+                    G.nodes[link]['count'] += 1
+                
+                if not G.has_edge(base_title, link):
+                    G.add_edge(base_title, link)
+                
+                if depth + 1 <= max_depth and link not in visited:
+                    visited.add(link)
+                    queue.append((link, depth + 1))
+                
+                if link in visited:
+                    for n in G.neighbors(link):
+                        G.nodes[n]['count'] +=1
+    
+    return G
 
 def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None) -> nx.DiGraph:
     """
@@ -168,6 +285,168 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
 
     return G
 
+async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int):
+    """
+    Effettua una richiesta HTTP asincrona a Wikipedia e parse accurato dei link nel corpo della pagina.
+    Restituisce fino a `limit` link unici a pagine Wikipedia nella stessa lingua.
+    """
+    # Costruisci URL e ottieni HTML
+    url = f"https://en.wikipedia.org/wiki/{quote(title)}"
+    async with session.get(url) as resp:
+        if resp.status != 200:
+            raise aiohttp.ClientError(f"HTTP {resp.status} per pagina {title}")
+        text = await resp.text()
+
+    # Parsing HTML con lxml e isolamento del contenuto principale
+    tree = html.fromstring(text)
+    content_div = tree.xpath('//div[@id="mw-content-text"]')[0]
+
+    links = []
+    seen = set()
+    # Cerca solo i link nel corpo effettivo
+    for href in content_div.xpath('.//a[@href and starts-with(@href, "/wiki/")]/@href'):
+        # Rimuovi eventuali frammenti (#) e namespace non principali
+        path = href.split('#')[0]
+        page_title = unquote(path[len('/wiki/'):])
+        if ':' in page_title:
+            continue
+        if page_title in seen:
+            continue
+        seen.add(page_title)
+        links.append(page_title)
+        if len(links) >= limit:
+            break
+
+    return title, links
+
+async def _BFS_Links_Async(start_title: str, limit: int, max_depth: int,
+                          max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
+    """
+    BFS parallela asincrona su link di Wikipedia.
+    """
+    G = nx.DiGraph()
+    G.add_node(start_title, count=1)
+
+    visited = {start_title}
+    queue = deque([(start_title, 0)])
+    start_time = asyncio.get_event_loop().time()
+
+    async with aiohttp.ClientSession() as session:
+        tasks = {}  # mapping di Task -> (node, depth)
+
+        while queue or tasks:
+            # Pump: sottometti nuovi task fino a max_concurrent
+            while queue and len(tasks) < max_concurrent:
+                node, depth = queue.popleft()
+                if max_runtime and (asyncio.get_event_loop().time() - start_time) > max_runtime:
+                    queue.clear()
+                    break
+                task = asyncio.create_task(fetch_and_parse(session, node, limit))
+                tasks[task] = (node, depth)
+
+            if not tasks:
+                break
+
+            # Drain: processa i task completati
+            done, _ = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                node, depth = tasks.pop(task)
+                try:
+                    base_title, links = task.result()
+                except Exception as e:
+                    print(f"Errore sul nodo {node}: {e}")
+                    continue
+
+                # Aggiorna grafo e accoda nuovi link
+                for link in links:
+                    if not G.has_node(link):
+                        G.add_node(link, count=1)
+                    else:
+                        G.nodes[link]['count'] += 1
+
+                    if not G.has_edge(base_title, link):
+                        G.add_edge(base_title, link)
+
+                    if depth + 1 <= max_depth and link not in visited:
+                        visited.add(link)
+                        queue.append((link, depth + 1))
+
+    return G
+
+
+
+def BFS2_Links_Parallel(start_title: str, limit: int, max_depth: int,
+                       max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
+    """
+    Wrapper sincrono compatibile con ambienti che hanno già un event loop attivo.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            # In un loop attivo: crea un nuovo task e usa `await` (valido ad esempio in Jupyter Notebook)
+            import nest_asyncio
+            nest_asyncio.apply()
+            return loop.run_until_complete(
+                _BFS_Links_Async(start_title, limit, max_depth, max_runtime, max_concurrent)
+            )
+    except RuntimeError:
+        # Nessun loop attivo: possiamo usare asyncio.run normalmente
+        return asyncio.run(
+            _BFS_Links_Async(start_title, limit, max_depth, max_runtime, max_concurrent)
+        )
+
+
+
+def draw_and_save_graph(G: nx.DiGraph,
+                        path: str = "graph.png",
+                        figsize: tuple = (12, 8),
+                        dpi: int = 300,
+                        with_labels: bool = True,
+                        node_size: int = 300,
+                        font_size: int = 10,
+                        layout: str = "spring"):
+    """
+    Disegna il grafo G e lo salva come immagine.
+
+    Args:
+      G            : NetworkX graph (DiGraph o Graph).
+      path         : Percorso di salvataggio (es. "graph.png").
+      figsize      : Dimensioni della figura in pollici (w, h).
+      dpi          : Risoluzione in dots per inch.
+      with_labels  : Se True disegna le etichette dei nodi.
+      node_size    : Grandezza dei nodi.
+      font_size    : Grandezza del font delle etichette.
+      layout       : Tipo di layout: "spring", "kamada_kawai", "circular", "shell"…
+    """
+    # Scegli il layout
+    if layout == "spring":
+        pos = nx.spring_layout(G, seed=42)
+    elif layout == "kamada_kawai":
+        pos = nx.kamada_kawai_layout(G)
+    elif layout == "circular":
+        pos = nx.circular_layout(G)
+    elif layout == "shell":
+        pos = nx.shell_layout(G)
+    else:
+        pos = nx.random_layout(G)
+
+    # Crea la figura
+    plt.figure(figsize=figsize, dpi=dpi)
+    # Disegna nodi e archi
+    nx.draw_networkx_nodes(G, pos, node_size=node_size, alpha=0.8)
+    nx.draw_networkx_edges(G, pos, arrowstyle='-|>', arrowsize=12, alpha=0.6)
+    # Disegna etichette
+    if with_labels:
+        nx.draw_networkx_labels(G, pos, font_size=font_size)
+
+    plt.axis('off')
+    plt.tight_layout()
+    # Salva immagine
+    plt.savefig(path, dpi=dpi)
+    plt.close()
+    print(f"Grafo salvato in: {path}")
+
+
 
 def batch_generator(df:pd.DataFrame, batch_size:int):
     for i in range(0, len(df), batch_size):
@@ -177,10 +456,12 @@ def batch_generator(df:pd.DataFrame, batch_size:int):
 if __name__ == "__main__":
     # Costruisce un grafo diretto
     G = nx.DiGraph()
-    start_page = "Caponata"
-    limit = 1       # Numero massimo di link per pagina
-    max_depth = 100    # Profondità massima
-    G = BFS_Links(start_page, limit, max_depth)
+    start_page = "God"
+    conn = Wiki_high_conn()
+    limit = 10      # Numero massimo di link per pagina
+    max_depth = 10    # Profondità massima
+    G = BFS2_Links_Parallel(start_page, 9, 4, 0.50)
 
     print("G parameter:", G)
+    draw_and_save_graph(G, layout='kamada_kawai')
   

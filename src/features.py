@@ -1,12 +1,10 @@
-from collections import defaultdict
 import pandas as pd
 import networkx as nx
 import nltk
-from matplotlib import pyplot as plt
 import numpy as np
 from datasets import load_dataset
 from Connection import Wiki_high_conn
-from utils import extract_entity_name, extract_entity_id, BFS_Links
+from utils import extract_entity_name, extract_entity_id, BFS2_Links_Parallel
 
 def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
@@ -73,11 +71,11 @@ def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     })  # r['entities'] => dict{ id_page: {sitelinks} }
     
     
-    result =r.get('entities', {})
+    result:dict =r.get('entities', {})
 
     for page in result:
         
-        sl = list(result[page]['sitelinks'].keys())
+        sl = list(result[page].get('sitelinks', {}).keys())
         lg = [l.removesuffix('wiki') for l in sl] 
         lang_av = dominant.intersection(lg)
         out[page] = lang_av
@@ -133,7 +131,6 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
         out[page] = q
 
     # For each page, fetch extracts in the available languages
-    word_counts = {}
     pages = {}
 
     for page, links in out.items():
@@ -171,26 +168,23 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
 
     return queries
 
-def G_factor(queries: pd.DataFrame, depth:int, limit:int) -> pd.DataFrame:
+def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.DataFrame:
     # Per ogni query nel DataFrame
+
+    
     for q in queries['name']:
-        G = BFS_Links(q, limit, depth, max_runtime=1.00)
+        G = BFS2_Links_Parallel(q, limit, depth, time_limit)
+        
         
         # Calcola il numero medio di occorrenze (nodi ricorrenti)
         total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)
-        avg_count = total_count // G.number_of_nodes() if G.number_of_nodes() else 0
+        avg_count = total_count / G.number_of_nodes() if G.number_of_nodes() else 0
         
         # Converte il grafo in versione non diretta una sola volta
         UG = G.to_undirected()
         
         # Numero di nodi nel grafo
         num_nodes = G.number_of_nodes()
-        #plt.figure(figsize=(10, 10))
-        #pos = nx.spring_layout(G)
-        #nx.draw(G,pos=pos, with_labels=True, node_size=50, node_color="skyblue", font_size=10, font_weight="bold")
-        #plt.title(f"Graph of Wikipedia Links for ")
-        #plt.savefig('graph.png')
-        
         
         # Calcola il PageRank una sola volta
         pr = nx.pagerank(G)
@@ -211,9 +205,6 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int) -> pd.DataFrame:
         queries.loc[mask, 'G_avg'] = avg_count
     return queries
 
-        
-
-
 if __name__ == '__main__':
     link = ['http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947']
     conn = Wiki_high_conn()
@@ -223,7 +214,7 @@ if __name__ == '__main__':
     count_references(dataset_t, conn)
     dominant_langs(dataset_t, conn)
     langs_length(dataset_t, conn)
-    G_factor(dataset_t)
+    G_factor(dataset_t, 5, 10, 0.009)
     #print(dataset_t)
     print(dataset_t[['label','G_mean_pr', 'G_nodes', 'G_diameter', 'G_num_cliques', 'G_rank', 'G']])
     conn.clear_cache()
