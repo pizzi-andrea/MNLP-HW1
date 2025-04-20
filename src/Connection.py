@@ -6,12 +6,12 @@ import requests_cache
 
 class Wiki_high_conn:
     """
-    A high-efficiency client for accessing Wikipedia and Wikidata APIs.
+    A high-efficiency client to access Wikipedia and Wikidata APIs.
     """
 
     def __init__(self, default_lang: str = 'en') -> None:
         """
-        Initialize the connection client and set up caching.
+        Initializes the connection client and set up caching.
         
         Args:
             default_lang (str): Default language for Wikipedia queries.
@@ -28,13 +28,13 @@ class Wiki_high_conn:
 
     def set_lang(self,lang:str) -> None:
         """
-        set default request lang
+        Sets default request language for Wikipedia API.
         """
         self._default_lang = lang
 
     def get_wikipedia(self, queries: list[str], params: dict[str, str], lang:str='') -> dict[str, Any]:
         """
-        Perform a batch request to Wikipedia's API.
+        Performs a batch request to Wikipedia API.
         
         Args:
             queries (list[str]): List of Wikipedia page titles.
@@ -61,7 +61,7 @@ class Wiki_high_conn:
 
     def get_wikidata(self, queries: list[str], params: dict[str, str]) -> dict[str, Any]:
         """
-        Perform a batch request to the Wikidata API.
+        Performs a batch request to the Wikidata API.
         
         Args:
             queries (list[str]): List of Wikidata entity URLs.
@@ -86,6 +86,6 @@ class Wiki_high_conn:
     
     def clear_cache(self):
         """
-        Clear the currently installed cache (if any)
+        Clears the currently installed cache (if any)
         """
         requests_cache.clear()

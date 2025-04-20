@@ -86,18 +86,16 @@ class CU_Dataset_Factory:
                 t.update(len(batch))
         return prc_result
 
-    def produce(
-        self, out_dir: path.PosixPath, encoding: bool = False, train: bool = True
-    ) -> pd.DataFrame:
+    def produce(self, out_dir: path.PosixPath, encoding: bool = False, train: bool = True) -> pd.DataFrame:
         """
-        Transform Cultural dataset in new dataset with additional or subset of features
+        Transforms Cultural dataset in new dataset with additional features or with a subset of features
         """
 
         product = None
         if not out_dir.exists():
             os.mkdir(out_dir)
 
-        if train:  # some cases need train set
+        if train:  # some cases need training set
             prc_train = self.__produce(self.train, encoding)
             prc_train.to_csv(out_dir.joinpath("train.tsv"), sep="\t", mode="w")
             product = prc_train
