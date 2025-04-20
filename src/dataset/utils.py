@@ -26,7 +26,7 @@ class Wiki_Scrapter:
         return
 
 
-    def load_languages(self) -> dict{str,str}:
+    def load_languages(self) -> dict[str,str]:
 
         """
         Gets language wiki page from wikimedia request
@@ -77,10 +77,3 @@ class Wiki_Scrapter:
                     wiki links
         """
         pass
-    
-    
-
-    
-
-        
-        

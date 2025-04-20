@@ -9,6 +9,7 @@ from features import count_references, dominant_langs, langs_length, G_factor
 from Connection import Wiki_high_conn
 
 
+# Class to append the new features to the dataset and produce the new dataset
 class CU_Dataset_Factory:
     def __init__(
         self,
@@ -31,6 +32,7 @@ class CU_Dataset_Factory:
         self.train: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["train"].to_pandas()  # type: ignore
         self.validation: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["validation"].to_pandas()  # type: ignore
 
+    # Hidden function that recursively appends the new features through a series of if
     def __produce(self, dataset: pd.DataFrame, encode: bool) -> pd.DataFrame:
 
         prc_result = pd.DataFrame(columns=self.features_enable)
@@ -86,6 +88,7 @@ class CU_Dataset_Factory:
                 t.update(len(batch))
         return prc_result
 
+    # Function that calls back __produce and returns the new dataset
     def produce(self, out_dir: path.PosixPath, encoding: bool = False, train: bool = True) -> pd.DataFrame:
         """
         Transforms Cultural dataset in new dataset with additional features or with a subset of features
@@ -108,11 +111,13 @@ class CU_Dataset_Factory:
 
         return product
 
+    # Returns True if the train or the validation sets exist
     def exists(self, train: bool) -> bool:
         return (not train and path.Path("./validation.tsv").exists()) or (
             train and path.Path("./train.tsv").exists()
         )
 
+    # Loads the new dataset, returns error if no dataset exists
     def load(self, train: bool = True) -> pd.DataFrame:
         result = None
         if train:
@@ -137,8 +142,6 @@ class CU_Dataset_Factory:
 
         return result
 
-    def produce_one_entry(
-        self, entry: pd.Series, encoding: bool = False
-    ) -> pd.DataFrame:
+    def produce_one_entry(self, entry: pd.Series, encoding: bool = False) -> pd.DataFrame:
         result = self.__produce(pd.DataFrame(entry), encoding)
         return result

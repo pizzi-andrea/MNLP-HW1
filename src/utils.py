@@ -462,4 +462,3 @@ if __name__ == "__main__":
 
     print("G parameter:", G)
     draw_and_save_graph(G, layout='kamada_kawai')
-  
