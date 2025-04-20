@@ -2,6 +2,7 @@ import pandas as pd
 import networkx as nx
 import nltk
 import numpy as np
+import requests
 from datasets import load_dataset
 from Connection import Wiki_high_conn
 from utils import extract_entity_name, extract_entity_id, BFS2_Links_Parallel
@@ -21,6 +22,7 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
 
     
     ids = queries['name']
+    idq = queries['item']
     ids = extract_entity_name(ids)
     params = {
         "action": "query",
@@ -29,7 +31,15 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
         "format": "json"
     }
     
-    data = conn.get_wikipedia(ids, params=params)
+    try:
+        data = conn.get_wikipedia(ids, params=params)
+    except requests.HTTPError as err:
+        if err.response.status_code == 404:
+            # try research page via wikidata APIs
+            data = conn.get_wikidata2wikipedia(idq, params)
+            if data != {}:
+                print(f'pages found in wikidata')
+    
     pages = data.get("query", {}).get("pages", {})
     for page_id, page in pages.items():
         title = page.get("title", f"page_{page_id}")
@@ -172,10 +182,14 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.Data
     # Per ogni query nel DataFrame
 
     
-    for q in queries['name']:
-        G = BFS2_Links_Parallel(q, limit, depth, time_limit)
-        
-        
+    for q, qid in zip( queries['name'], queries['item']):
+        qid = extract_entity_id([qid])[0]
+        try:
+            G = BFS2_Links_Parallel(qid,limit, depth, time_limit, 20)
+        except requests.HTTPError as err:
+            print(err)
+            return queries
+                
         # Calcola il numero medio di occorrenze (nodi ricorrenti)
         total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)
         avg_count = total_count / G.number_of_nodes() if G.number_of_nodes() else 0
@@ -203,6 +217,8 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.Data
         queries.loc[mask, 'G_num_cliques'] = num_cliques
         queries.loc[mask, 'G_rank'] = page_rank
         queries.loc[mask, 'G_avg'] = avg_count
+        
+        
     return queries
 
 if __name__ == '__main__':
@@ -214,9 +230,9 @@ if __name__ == '__main__':
     count_references(dataset_t, conn)
     dominant_langs(dataset_t, conn)
     langs_length(dataset_t, conn)
-    G_factor(dataset_t, 5, 10, 0.009)
+    G_factor(dataset_t, 9, 6, 0.50)
     #print(dataset_t)
-    print(dataset_t[['label','G_mean_pr', 'G_nodes', 'G_diameter', 'G_num_cliques', 'G_rank', 'G']])
+    print(dataset_t[['label','G_mean_pr', 'G_nodes', 'G_diameter', 'G_num_cliques', 'G_rank', "G_avg" 'G']])
     conn.clear_cache()
     dataset_t.to_csv('prova.csv')
 

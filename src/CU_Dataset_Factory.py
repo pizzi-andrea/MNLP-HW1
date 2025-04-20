@@ -10,6 +10,9 @@ from Connection import Wiki_high_conn
 
 
 class CU_Dataset_Factory:
+    """
+    Builder Class use to generate train or test dataset with required features
+    """
     def __init__(
         self,
         target_feature: str,
@@ -35,6 +38,8 @@ class CU_Dataset_Factory:
 
         prc_result = pd.DataFrame(columns=self.features_enable)
         exstra = []
+
+        # Copia diretta delle colonne esistenti nel dataset
         for feature in tqdm(self.features_enable, desc="copy dataset"):
             if feature in dataset.columns.tolist():
                 if encode and (
@@ -42,30 +47,26 @@ class CU_Dataset_Factory:
                     or dataset[feature].dtype == object
                 ):
                     if feature == self.target:
-                        prc_result[feature] = self.label_e.fit_transform(
-                            dataset[feature]
-                        )
+                        prc_result[feature] = self.label_e.fit_transform(dataset[feature])
                     else:
                         dummies = pd.get_dummies(
                             dataset[feature], dtype=pd.Int32Dtype(), prefix=feature
                         )
                         prc_result = pd.concat([prc_result, dummies], axis=1)
-                        prc_result = prc_result.drop(labels=feature, axis=1)
-
                 else:
                     prc_result[feature] = dataset[feature]
-
             else:
                 exstra.append(feature)
 
+        # Elaborazione batch
         batch_cc = 0
-
-        t = tqdm(desc="batch compute", total=(dataset.size))
-        t.set_postfix({"batch": batch_cc})
+        t = tqdm(desc="batch compute", total=len(dataset))  # usa len(dataset) invece di dataset.size
         for batch in batch_generator(dataset, batch_size=self.batch_size):  # type: ignore
             batch_cc += 1
-
             t.set_postfix({"batch": batch_cc})
+
+            original_batch_len = len(batch)
+
             for feature in exstra:
                 if feature == "reference":
                     batch = count_references(batch.copy(), self.conn)
@@ -75,15 +76,18 @@ class CU_Dataset_Factory:
                     batch = langs_length(batch.copy(), self.conn)
                 elif feature in self.__gf:
                     mask = list(self.__gf.intersection(self.features_enable))
-                    batch = G_factor(batch.copy(), 9, 4, 0.50)
+                    batch = G_factor(batch.copy(), 3, 15, 0.50)
                     prc_result.loc[batch.index, mask] = batch[mask]
-                    continue
+                    continue  # salta t.update() in questo caso, lo facciamo alla fine
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
                 prc_result.loc[batch.index, feature] = batch[feature]
 
-                t.update(len(batch))
+            # Spostato qui per assicurare che venga aggiornato una volta per batch
+            t.update(original_batch_len)
+
+        t.close()
         return prc_result
 
     def produce(

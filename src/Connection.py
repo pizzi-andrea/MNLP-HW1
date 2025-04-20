@@ -47,8 +47,8 @@ class Wiki_high_conn:
             lang = self._default_lang
         url = f"https://{lang}.wikipedia.org/w/api.php"
         params['action'] = 'query' if not params.get('action') else params['action']
-        params['format'] = 'json'  if not params.get('format') else params['format']
-        params['titles'] = '|'.join(queries) if len(queries) > 1 else queries[0]
+        params['format'] = 'json'  
+        params['titles'] = '|'.join(queries)
         try:
             response = self.session.get(url, params=params)
             data = response.json()
@@ -73,7 +73,7 @@ class Wiki_high_conn:
         url = "https://www.wikidata.org/w/api.php"
         
         params['format'] = 'json'
-        params['titles'] = '|'.join(queries)
+        params['ids'] = '|'.join(queries)
         try:
             response = self.session.get(url, params=params)
             data = response.json()
@@ -84,8 +84,50 @@ class Wiki_high_conn:
         
         return data
     
+    def get_wikidata2wikipedia(self, queriesId: list[str], params:dict[str, str]) -> dict[str, Any]:
+        """
+        Method that allow get wikipedia pages in batch specificated wikidata ids
+        Args:
+            queries (list[str]): List of Wikidata entity URLs.
+            params (dict[str, str]): API parameters.
+        
+        Returns:
+            dict: The JSON response from the Wikipedia API.
+        """
+        p = {
+        'action': 'wbgetentities',
+        'sites': 'wikipedia',  # Indica che vogliamo i link a Wikipedia
+        'props': 'sitelinks',  # Chiediamo i sitelinks
+        'format': 'json',  # Risposta in formato JSON
+        'utf8': 1
+        }
+
+        r = self.get_wikidata(queriesId, p).get('entities', {})
+
+        queriesName = []
+        for page_id, data in r.items():
+            if 'sitelinks' in data:
+                lang_link:str = data.get('sitelinks', {}).get(f'{self._default_lang}wiki', {}).get('title', '')
+                name = lang_link.split(sep='/')[-1] if len(lang_link) > 0 else ''
+                queriesName.append(name)
+            else:
+                continue
+        
+        print(queriesName)
+        r = self.get_wikipedia(queriesName, params)
+        return r
+
     def clear_cache(self):
         """
         Clear the currently installed cache (if any)
         """
         requests_cache.clear()
+
+if __name__ == '__main__':
+    print(f'[Test script for module {__file__}]')
+    queris = ['Q1450662','Q178', 'Q223655', 'Q1723884']
+
+    conn = Wiki_high_conn()
+
+    r = conn.get_wikidata2wikipedia(queris, {})
+    print(r)
