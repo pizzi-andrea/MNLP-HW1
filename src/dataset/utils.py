@@ -7,7 +7,6 @@ def extract_entity_id(url:str) -> str:
 class Wiki_Scrapter:
     def __init__(self, wikidata_id:str, default_lang:str='en', wiki_t:str='wiki') -> None:
         
-        
         self.conn:Client = Client()
         self.page = None
         self.wiki_t = wiki_t
@@ -16,7 +15,7 @@ class Wiki_Scrapter:
             self.page = self.conn.get(wikidata_id, load=True)
 
         except requests.HTTPError as err:
-            print(f'connection error {err}')
+            print(f'Connection Error {err}')
             exit(-1)
         
         self.id = wikidata_id
@@ -27,10 +26,10 @@ class Wiki_Scrapter:
         return
 
 
-    def load_languages(self) -> dict{str,str}:
+    def load_languages(self) -> dict[str,str]:
 
         """
-        Get language wiki page from wikimedia request
+        Gets language wiki page from wikimedia request
 
         Parameters:
             wikidata_id(str): Wikidata unique resource identificator
@@ -41,8 +40,6 @@ class Wiki_Scrapter:
             out(dict[str,str]):
                 dictionary with form 'lang':'https://{lang}.wikipedia.org/...'
         """
-
-        
        
         self._getsite() # load wiki links
         links = {}
@@ -58,7 +55,7 @@ class Wiki_Scrapter:
     
     def set_lang(self, new_lang:str):
         """
-            Set new default language and update all internal data
+            Sets new default language and updates all internal data
 
             Parameters:
                 lang(str): new language to set
@@ -67,24 +64,16 @@ class Wiki_Scrapter:
         self.lang = new_lang
 
     def get_title(self) -> str:
-        """Return site title in language set"""
+        """Returns site title in language set"""
         self._getsite()
         return  self.sitelinks[f'{self.lang}{self.wiki_t}']['title']
-    
 
     def get_wikidata_links(self) -> list[str]:
         """
-            Return all wikidata links
+            Returns all wikidata links
 
             Returns:
                 out(List[str]):
                     wiki links
         """
         pass
-    
-    
-
-    
-
-        
-        

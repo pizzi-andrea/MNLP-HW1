@@ -19,7 +19,7 @@ from urllib.parse import quote, unquote
 
 def split_list(lst, n):
     """
-    Split a list into `n` sublists as evenly as possible.
+    Splits a list into `n` sublists as evenly as possible.
     
     Args:
         lst (list): The list to split.
@@ -33,7 +33,7 @@ def split_list(lst, n):
 
 def extract_entity_id(url: pd.DataFrame) -> list[str]:
     """
-    Extract Wikidata entity IDs from a list of URLs.
+    Extracts Wikidata entity IDs from a list of URLs.
     
     Args:
         url (list[str]): List of Wikidata URLs.
@@ -45,7 +45,7 @@ def extract_entity_id(url: pd.DataFrame) -> list[str]:
 
 def extract_entity_name(url:pd.Series) -> list[str]:
     """
-    Extract Wikipedia entity names from a list of URLs.
+    Extracts Wikipedia entity names from a list of URLs.
     
     Args:
         url (list[str]): List of Wikipedia URLs.
@@ -55,20 +55,136 @@ def extract_entity_name(url:pd.Series) -> list[str]:
     """
     return [l.strip().split("/")[-1].replace("_", " ") for l in url]
 
-def BFS_Links_base(title: str, limit: int, max_depth: int, max_runtime: float = None) -> nx.DiGraph:
+def __parse_wikipedia_links(title, session, limit):
+    encoded_title = title.replace(" ", "_")
+    url = "https://en.wikipedia.org/w/api.php"
+    params = {
+        "action": "parse",
+        "page": encoded_title,
+        "prop": "text",
+        "format": "json"
+    }
+
+    try:
+        response = session.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        if "parse" not in data or "text" not in data["parse"] or "*" not in data["parse"]["text"]:
+            return title, []
+
+        html = data["parse"]["text"]["*"]
+        soup = BeautifulSoup(html, "lxml")
+        content_div = soup.find("div", class_="mw-parser-output")
+
+        links = []
+        seen = set()
+        if content_div:
+            for a in content_div.find_all("a", href=True):
+                href = a["href"]
+                if href.startswith("/wiki/") and ":" not in href and "#" not in href:
+                    title_link = a.get("title")
+                    if title_link and title_link not in seen:
+                        links.append(title_link)
+                        seen.add(title_link)
+
+        links.sort()
+        return title, links[:limit]
+    except Exception:
+        return title, []
+
+def parse_wikipedia_links(node, session, limit):
     """
-    Esegue una ricerca BFS sui link di Wikipedia, a partire dal titolo fornito.
+    Calls parse_wikipedia_links(node, session, limit).  
+    On ANY exception (network error, JSON error, None return), returns (node, []).
+    """
+    try:
+        result = __parse_wikipedia_links(node, session, limit)
+        # guard against somebody returning None
+        if not (isinstance(result, tuple) and len(result) == 2):
+            raise ValueError(f"Unexpected return from parse_wikipedia_links: {result!r}")
+        return result
+    except Exception as e:
+        print(f"⚠️ parse failed for {node}: {e!r}")
+        # return an empty list of links so we can continue
+        return node, []
+
+def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_workers=16):
+    G = nx.DiGraph()
+    G.add_node(start_title, count=1)
     
-    Ottimizzazioni:
-      - Utilizza una coda per il BFS.
-      - Evita richieste duplicate usando una cache.
-      - Controlla il tempo di esecuzione massimo (max_runtime).
+    visited = {start_title}
+    queue = deque([(start_title, 0)])
+    session = requests.Session()
+    start_time = time.time()
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # futures: mapping da Future a (node, depth)
+        futures = {}
+        
+        # Continua finché c'è qualcosa da inviare o da attendere
+        while queue or futures:
+            # Pump: sottometti fino a max_workers task
+            while queue and len(futures) < max_workers:
+                node, depth = queue.popleft()
+                
+                # Controllo runtime
+                if max_runtime and (time.time() - start_time) > max_runtime:
+                    queue.clear()
+                    break
+                
+                # Sottometti il parsing di `node`
+                future = executor.submit(parse_wikipedia_links, node, session, limit)
+                futures[future] = (node, depth)
+            
+            if not futures:
+                break  # niente in corso e nulla in coda
+            
+            # Drain: processa il primo task completato
+            done, _ = next(as_completed(futures), (None, None)), None
+            future = done if isinstance(done, type(next(iter(futures)))) else done[0]
+            base, depth = futures.pop(future)
+            
+            try:
+                base_title, links = future.result()
+            except Exception as e:
+                print(f"Errore sul nodo {base}: {e}")
+                continue
+            
+            # Aggiorna grafo e popola la coda per il livello successivo
+            for link in links:
+                if not G.has_node(link):
+                    G.add_node(link, count=1)
+                else:
+                    G.nodes[link]['count'] += 1
+                
+                if not G.has_edge(base_title, link):
+                    G.add_edge(base_title, link)
+                
+                if depth + 1 <= max_depth and link not in visited:
+                    visited.add(link)
+                    queue.append((link, depth + 1))
+                
+                if link in visited:
+                    for n in G.neighbors(link):
+                        G.nodes[n]['count'] +=1
+    
+    return G
+
+def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None) -> nx.DiGraph:
+    """
+    Executes a BFS search on Wikipedia links, starting from the given title.
+    
+    Optimizations:
+      - Utilizes a queue for the BFS
+      - Avoids duplicate requests using a cache
+      - Controls the maximum runtime (max_runtime)
     """
     G = nx.DiGraph()
     response_cache = {}
     session = requests.Session()
 
-    # Aggiunge il nodo iniziale
+    # Adds the initial node
     G.add_node(title, count=1, visited=False)
     queue = deque([(title, max_depth)])
     time_global = time.time()
@@ -76,17 +192,17 @@ def BFS_Links_base(title: str, limit: int, max_depth: int, max_runtime: float = 
     while queue:
         base, depth = queue.popleft()
 
-        # Controllo runtime
+        # Runtime control
 
-        # Salta se profondità 0 o già visitato
+        # Skips if depth = 0 or already visited
         if depth <= 0 or G.nodes[base].get('visited', False):
             continue
 
-        # Ottieni link from cache o API
+        # Gets link from cache or API
         if base in response_cache:
             links = response_cache[base]
         else:
-            # Prepara titolo per API: sostituisci spazi con underscore, lascia comma
+            # Prepares title for API: substitutes spaces with underscore, leaves comma
             encoded_title = base.replace(" ", "_")
             url = "https://en.wikipedia.org/w/api.php"
             params = {
@@ -101,7 +217,7 @@ def BFS_Links_base(title: str, limit: int, max_depth: int, max_runtime: float = 
                 response = session.get(url, params=params, timeout=10)
                 response.raise_for_status()
                 data = response.json()
-                # Controllo presenza campo 'parse'
+                # Controls existence of 'parse' field
                 time_current = time.time()
                 if  time_current - time_global > max_runtime:
 
@@ -110,11 +226,8 @@ def BFS_Links_base(title: str, limit: int, max_depth: int, max_runtime: float = 
                     
                     continue
 
-                
-
-
                 if "parse" not in data or "text" not in data["parse"] or "*" not in data["parse"]["text"]:
-                    print(f"Pagina non parsabile o assente per '{encoded_title}'")
+                    print(f"Non parsable or non existing page for '{encoded_title}'")
                     #print(data)
                     response_cache[base] = []
                     continue
@@ -151,7 +264,7 @@ def BFS_Links_base(title: str, limit: int, max_depth: int, max_runtime: float = 
                 response_cache[base] = []
                 continue
 
-        # Aggiunge i link al grafo e alla coda
+        # Adds links to graph and to queue
         for link in links:
             if not G.has_node(link):
                 G.add_node(link, count=1, visited=False)
@@ -164,30 +277,22 @@ def BFS_Links_base(title: str, limit: int, max_depth: int, max_runtime: float = 
             if not G.nodes[link]['visited']:
                 queue.append((link, depth - 1))
 
-        # Marca come visitato
+        # Flags as visited
         G.nodes[base]['visited'] = True
 
     return G
 
-
-async def fetch_and_parse(
-    session: aiohttp.ClientSession,
-    title: str,
-    limit: int = 50
-) -> tuple[str, list[str]]:
+async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int):
     """
-    Recupera fino a `limit` link interni (namespace principale) da EN-Wikipedia.
+    Effettua una richiesta HTTP asincrona a Wikipedia e parse accurato dei link nel corpo della pagina.
+    Restituisce fino a `limit` link unici a pagine Wikipedia nella stessa lingua.
     """
-    from urllib.parse import quote
-
-    url = (
-        "https://en.wikipedia.org/w/api.php"
-        "?action=query&format=json&prop=links"
-        f"&pllimit={limit}&titles={quote(title)}"
-    )
+    # Costruisci URL e ottieni HTML
+    url = f"https://en.wikipedia.org/wiki/{quote(title)}"
     async with session.get(url) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
+        if resp.status != 200:
+            raise aiohttp.ClientError(f"HTTP {resp.status} per pagina {title}")
+        text = await resp.text()
 
     # Prendiamo la lista dei links per la pagina (dovrebbe essere una sola, poiché
     # titles=singolo titolo)
@@ -236,7 +341,7 @@ async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
 async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
                           max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
     """
-    BFS parallela asincrona su link di Wikipedia.
+    Asynchronous parallel BFS on Wikipedia links.
     """
     
     G = nx.DiGraph()
@@ -251,7 +356,7 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
         tasks = {}  # mapping di Task -> (node, depth)
 
         while queue or tasks:
-            # Pump: sottometti nuovi task fino a max_concurrent
+            # Pump: submit new tasks until max_concurrent
             while queue and len(tasks) < max_concurrent:
                 node, depth = queue.popleft()
                 if max_runtime and (asyncio.get_event_loop().time() - start_time) > max_runtime:
@@ -263,14 +368,14 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
             if not tasks:
                 break
 
-            # Drain: processa i task completati
+            # Drain: processes completed tasks
             done, _ = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
             for task in done:
                 node, depth = tasks.pop(task)
                 base_title, links = task.result()
                 
 
-                # Aggiorna grafo e accoda nuovi link
+                # Updates graph and appends new links
                 for link in links:
                     if not G.has_node(link):
                         G.add_node(link, count=1)
@@ -296,19 +401,19 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
 def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int,
                        max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
     """
-    Async BFS links search.
+    Wrapper sincrono compatibile con ambienti che hanno già un event loop attivo.
     """
     try:
         loop = asyncio.get_running_loop()
         if loop.is_running():
-            # In un loop attivo: crea un nuovo task e usa `await` (valido ad esempio in Jupyter Notebook)
+            # In an active loop: creates a new task and uses `await` (valid for instance in Jupyter Notebook)
             import nest_asyncio
             nest_asyncio.apply()
             return loop.run_until_complete(
                 _BFS_Links_Async( qid,limit, max_depth, max_runtime, max_concurrent)
             )
     except RuntimeError:
-        # Nessun loop attivo: possiamo usare asyncio.run normalmente
+        # No active loop: we can also use asyncio.run normally
         return asyncio.run(
             _BFS_Links_Async(qid,limit, max_depth, max_runtime, max_concurrent)
         )
@@ -324,18 +429,19 @@ def draw_and_save_graph(G: nx.DiGraph,
                         font_size: int = 10,
                         layout: str = "spring"):
     """
-    Disegna il grafo G e lo salva come immagine.
+    Draws the graph G and saves it as image.
 
     Args:
-      G            : NetworkX graph (DiGraph o Graph).
-      path         : Percorso di salvataggio (es. "graph.png").
-      figsize      : Dimensioni della figura in pollici (w, h).
-      dpi          : Risoluzione in dots per inch.
-      with_labels  : Se True disegna le etichette dei nodi.
-      node_size    : Grandezza dei nodi.
-      font_size    : Grandezza del font delle etichette.
-      layout       : Tipo di layout: "spring", "kamada_kawai", "circular", "shell"…
+      G            : NetworkX graph (DiGraph or Graph).
+      path         : Saving path (es. "graph.png").
+      figsize      : Dimensions of the figure in inches (w, h).
+      dpi          : Resolution in dots per inch.
+      with_labels  : If True, draws the nodes' labels.
+      node_size    : Size of the nodes.
+      font_size    : Size of the labels' font.
+      layout       : Type of layout: "spring", "kamada_kawai", "circular", "shell"…
     """
+
     # Scegli il layout
     if layout == "spring":
         pos = nx.spring_layout(G, seed=42)
@@ -348,21 +454,21 @@ def draw_and_save_graph(G: nx.DiGraph,
     else:
         pos = nx.random_layout(G)
 
-    # Crea la figura
+    # Creates the figure
     plt.figure(figsize=figsize, dpi=dpi)
-    # Disegna nodi e archi
+    # Draws nodes and edges
     nx.draw_networkx_nodes(G, pos, node_size=node_size, alpha=0.8)
     nx.draw_networkx_edges(G, pos, arrowstyle='-|>', arrowsize=12, alpha=0.6)
-    # Disegna etichette
+    # Draws labels
     if with_labels:
         nx.draw_networkx_labels(G, pos, font_size=font_size)
 
     plt.axis('off')
     plt.tight_layout()
-    # Salva immagine
+    # Saves image
     plt.savefig(path, dpi=dpi)
     plt.close()
-    print(f"Grafo salvato in: {path}")
+    print(f"Graph saved in: {path}")
 
 
 
@@ -370,16 +476,15 @@ def batch_generator(df:pd.DataFrame, batch_size:int):
     for i in range(0, len(df), batch_size):
         yield df.iloc[i:i+batch_size]
 
-# Esempio di test
+#  Test example
 if __name__ == "__main__":
-    # Costruisce un grafo diretto
+    # Builds a directed graph
     G = nx.DiGraph()
     start_page = "God"
     conn = Wiki_high_conn()
     limit = 10      # Numero massimo di link per pagina
     max_depth = 10    # Profondità massima
-    G = BFS2_Links_Parallel('Q513',  3, 15, 0.50)
+    G = BFS2_Links_Parallel(start_page, 9, 4, 0.50)
 
     print("G parameter:", G)
     draw_and_save_graph(G, layout='kamada_kawai')
-  

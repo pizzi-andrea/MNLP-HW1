@@ -9,8 +9,8 @@ from utils import extract_entity_name, extract_entity_id, BFS2_Links_Parallel
 
 def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
-    Fectures Exstractor: Given a batch of Wikipedia links, 
-    detterminant how many referance have each page in `queries`
+    Features Exstractor: Given a batch of Wikipedia links, 
+    determines how many references each page has in `queries`
         
     Args:
         queries (list[str]): List of Wikipedia entity URLs.
@@ -93,14 +93,15 @@ def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     
     return queries
 
+# wrong description, change it
 def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
-    Feature extractor: Given a batch of Wikidata entity links, determines in how many
-    of the top 10 Wikimedia languages each page is available.
+    Feature extractor: Given a batch of Wikidata entity links, determines how many words each page 
+    of the top 10 Wikimedia languages contains.
 
     Top languages considered: ['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja']
     
-    Args:
+    Args: CHANGE!!!
         queries (list[str]): List of Wikidata entity URLs.
         conn (Wiki_high_conn): An active Wiki_high_conn instance.
         batch (int, optional): Batch size for API requests. Defaults to 1.
@@ -114,11 +115,11 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     dominant = set(['enwiki', 'eswiki', 'frwiki', 'dewiki', 'ptwiki', 'itwiki'])
     
     
-    # get wikimedia ids
+    # Gets Wikimedia ids
     ids = queries['item']
     ids = extract_entity_name(ids)
     
-    # perform query using Wikidata APIs
+    # Performs query using Wikidata APIs
     r = conn.get_wikidata(ids, params={
         "action": "wbgetentities",
         "ids": "|".join(ids),
@@ -129,7 +130,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
   
     result = r['entities']
 
-    # Collect titles in the dominant languages
+    # Collects titles in the dominant languages
     for page in result:
         
         q = []
@@ -152,7 +153,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
                 "titles": [link],              # pages id
                 "prop": "extracts",            # required property
                 "explaintext": True,           # get plaintext
-                "exintro": True,             # expand links
+                "exintro": True,               # expand links
                 "exsectionformat": "plain"     # plaintext
             }, lang=l) # type: ignore
             
@@ -160,7 +161,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
         
         total_words = 0
         valid_pages = 0
-        # for each page write in different language count words
+        # for each page written in a different language, count words
         for page_id in pages.keys():
             extract = pages[page_id].get('extract', '')
             if extract:
@@ -179,9 +180,8 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     return queries
 
 def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.DataFrame:
-    # Per ogni query nel DataFrame
-
     
+    # For each query in DataFrame
     for q, qid in zip( queries['name'], queries['item']):
         qid = extract_entity_id([qid])[0]
         try:
@@ -189,36 +189,33 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.Data
         except requests.HTTPError as err:
             print(err)
             return queries
-                
-        # Calcola il numero medio di occorrenze (nodi ricorrenti)
+                # Computes the mean number of occurrences (recurrent nodes)
         total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)
         avg_count = total_count / G.number_of_nodes() if G.number_of_nodes() else 0
         
-        # Converte il grafo in versione non diretta una sola volta
+        # Converts the graph in a undirected version only once
         UG = G.to_undirected()
         
-        # Numero di nodi nel grafo
+        # Number of nodes in the graph
         num_nodes = G.number_of_nodes()
         
-        # Calcola il PageRank una sola volta
+        # Computes the PageRank only once
         pr = nx.pagerank(G)
         page_rank = pr.get(q, 0)
-        # Usa la mediana dei PageRank come "G_mean_pr"
+        # Uses the median of the PageRanks as "G_mean_pr"
         pr_values = list(pr.values())
         mean_pr = np.median(pr_values) if pr_values else 0
         
-        # Calcolo del numero delle clique in UG: iteriamo direttamente sul generatore
+        # Computes the number of clicks in UG: we iterate directly on the generator
         num_cliques = sum(1 for _ in nx.find_cliques(UG))
         
-        # Crea una maschera per aggiornare le righe che contengono il nome 'q'
+        # Creates a mask to update the rows containing the name 'q'
         mask = queries['name'].str.contains(q, case=False, regex=False, na=False)
         queries.loc[mask, 'G_mean_pr'] = mean_pr
         queries.loc[mask, 'G_nodes'] = num_nodes
         queries.loc[mask, 'G_num_cliques'] = num_cliques
         queries.loc[mask, 'G_rank'] = page_rank
         queries.loc[mask, 'G_avg'] = avg_count
-        
-        
     return queries
 
 if __name__ == '__main__':
