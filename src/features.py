@@ -216,6 +216,7 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.Data
         queries.loc[mask, 'G_num_cliques'] = num_cliques
         queries.loc[mask, 'G_rank'] = page_rank
         queries.loc[mask, 'G_avg'] = avg_count
+        queries.loc[mask, 'G_diameter'] = nx.diameter(UG) if nx.is_connected(UG) else 0
     return queries
 
 if __name__ == '__main__':

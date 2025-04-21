@@ -26,7 +26,7 @@ class CU_Dataset_Factory:
         self.conn = Wiki_high_conn()
         self.features_enable.sort()
         self.label_e = LabelEncoder()
-        self.__gf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_rank", "G_avg"}
+        self.__gf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_rank", "G_avg", 'G_diameter'}
         if not target_feature in features_enable:
             raise ValueError("target feature must be in features_enable_")
         self.target = target_feature
@@ -66,21 +66,24 @@ class CU_Dataset_Factory:
         for batch in batch_generator(dataset, batch_size=self.batch_size):  # type: ignore
             batch_cc += 1
             t.set_postfix({"batch": batch_cc})
-
+            
             original_batch_len = len(batch)
 
             for feature in exstra:
+                t.set_description(feature, refresh=True)
                 if feature == "reference":
                     batch = count_references(batch.copy(), self.conn)
                 elif feature == "languages":
                     batch = dominant_langs(batch.copy(), self.conn)
                 elif feature == "length_lan":
                     batch = langs_length(batch.copy(), self.conn)
-                elif feature in self.__gf:
-                    mask = list(self.__gf.intersection(self.features_enable))
+                elif feature == 'G':
+                    mask = list(self.__gf)
                     batch = G_factor(batch.copy(), 3, 15, 0.50)
                     prc_result.loc[batch.index, mask] = batch[mask]
-                    continue  # salta t.update() in questo caso, lo facciamo alla fine
+                    continue
+                
+
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
