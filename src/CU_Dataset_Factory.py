@@ -27,6 +27,7 @@ class CU_Dataset_Factory:
         self.features_enable.sort()
         self.label_e = LabelEncoder()
         self.__gf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_rank", "G_avg", 'G_diameter'}
+        self._id = {'item', 'name'}
         if not target_feature in features_enable:
             raise ValueError("target feature must be in features_enable_")
         self.target = target_feature
@@ -38,23 +39,35 @@ class CU_Dataset_Factory:
     # Hidden function that recursively appends the new features through a series of if
     def __produce(self, dataset: pd.DataFrame, encode: bool) -> pd.DataFrame:
 
-        prc_result = pd.DataFrame(columns=self.features_enable)
+        prc_result = pd.DataFrame()
         exstra = []
 
         # Copia diretta delle colonne esistenti nel dataset
         for feature in tqdm(self.features_enable, desc="copy dataset"):
+           
+            if feature == 'G':
+                for c in self.__gf:
+                        prc_result.insert(0, c, None)
+            else:
+                prc_result.insert(0, feature, None)
+
             if feature in dataset.columns.tolist():
-                if encode and (
+                if encode and not(feature in self._id) and (
                     dataset[feature].dtype == pd.StringDtype()
                     or dataset[feature].dtype == object
                 ):
                     if feature == self.target:
                         prc_result[feature] = self.label_e.fit_transform(dataset[feature])
                     else:
+                        
                         dummies = pd.get_dummies(
                             dataset[feature], dtype=pd.Int32Dtype(), prefix=feature
                         )
+                        
+                            
+                        prc_result = prc_result.drop(feature, axis=1)
                         prc_result = pd.concat([prc_result, dummies], axis=1)
+
                 else:
                     prc_result[feature] = dataset[feature]
             else:
@@ -71,7 +84,9 @@ class CU_Dataset_Factory:
 
             for feature in exstra:
                 t.set_description(feature, refresh=True)
+                
                 if feature == "reference":
+                    
                     batch = count_references(batch.copy(), self.conn)
                 elif feature == "languages":
                     batch = dominant_langs(batch.copy(), self.conn)
@@ -82,14 +97,14 @@ class CU_Dataset_Factory:
                     batch = G_factor(batch.copy(), 3, 15, 0.50)
                     prc_result.loc[batch.index, mask] = batch[mask]
                     continue
-                
-
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
+                
                 prc_result.loc[batch.index, feature] = batch[feature]
 
             # Spostato qui per assicurare che venga aggiornato una volta per batch
+            
             t.update(original_batch_len)
 
         t.close()

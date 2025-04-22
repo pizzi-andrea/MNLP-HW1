@@ -189,7 +189,19 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.Data
         except requests.HTTPError as err:
             print(err)
             return queries
-                # Computes the mean number of occurrences (recurrent nodes)
+        
+        if G.number_of_nodes() == 0:
+            mask = queries['name'].str.contains(q, case=False, regex=False, na=False)
+            queries.loc[mask, 'G_mean_pr'] = 0
+            queries.loc[mask, 'G_nodes'] = 0
+            queries.loc[mask, 'G_num_cliques'] = 0
+            queries.loc[mask, 'G_rank'] = 0
+            queries.loc[mask, 'G_avg'] = 0
+            queries.loc[mask, 'G_diameter'] = 0
+            continue
+
+
+        # Computes the mean number of occurrences (recurrent nodes)
         total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)
         avg_count = total_count / G.number_of_nodes() if G.number_of_nodes() else 0
         
@@ -207,9 +219,10 @@ def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.Data
         mean_pr = np.median(pr_values) if pr_values else 0
         
         # Computes the number of clicks in UG: we iterate directly on the generator
-        num_cliques = sum(1 for _ in nx.find_cliques(UG))
+        num_cliques = sum(1 for _ in nx.find_cliques(UG)) / (2 ** G.number_of_nodes() - 1)
         
         # Creates a mask to update the rows containing the name 'q'
+        
         mask = queries['name'].str.contains(q, case=False, regex=False, na=False)
         queries.loc[mask, 'G_mean_pr'] = mean_pr
         queries.loc[mask, 'G_nodes'] = num_nodes

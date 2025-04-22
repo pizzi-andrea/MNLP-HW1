@@ -283,29 +283,66 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
     return G
 
 async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int):
-    """
-    Effettua una richiesta HTTP asincrona a Wikipedia e parse accurato dei link nel corpo della pagina.
-    Restituisce fino a `limit` link unici a pagine Wikipedia nella stessa lingua.
-    """
-    # Costruisci URL e ottieni HTML
-    url = f"https://en.wikipedia.org/wiki/{quote(title)}"
-    async with session.get(url) as resp:
-        if resp.status != 200:
-            raise aiohttp.ClientError(f"HTTP {resp.status} per pagina {title}")
-        text = await resp.text()
+    lang = "en"
+    url = f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"
 
-    # Prendiamo la lista dei links per la pagina (dovrebbe essere una sola, poiché
-    # titles=singolo titolo)
-    pages = data.get("query", {}).get("pages", {})
-    links: list[str] = []
-    for page in pages.values():
-        for link in page.get("links", []):
-            t = link.get("title", "")
-            if ":" not in t:
-                links.append(t)
+    try:
+        async with session.get(url) as resp:
+            resp.raise_for_status()
+            body = await resp.read()
+    except aiohttp.ClientError as e:
+        status = getattr(e, 'status', 'Unknown')
+        message = getattr(e, 'message', str(e))
+        raise aiohttp.ClientError(f"HTTP {status} for page '{title}'. Error: {message}") from e
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch page '{title}'. Error: {e}") from e
+
+    try:
+        tree = html.fromstring(body)
+        content_div = tree.get_element_by_id('mw-content-text', None)
+        if content_div is None:
+            content_div = tree.find('.//div[contains(@class, "mw-parser-output")]')
+            if content_div is None:
+                 print(f"Warning: Could not find main content div for '{title}'. Returning empty list.")
+                 return title, []
+
+    except Exception as e:
+         raise RuntimeError(f"Failed to parse HTML for page '{title}'. Error: {e}") from e
+
+    seen = set()
+    links = []
+
+    hrefs = content_div.xpath('.//p//a[starts-with(@href, "/wiki/")]/@href')
+
+    for href in hrefs:
+        path = href.split('#', 1)[0]
+
+        if not path.startswith('/wiki/'):
+            continue
+        key = path[len('/wiki/'):]
+
+        if ':' in key:
+            continue
+
+        if key == 'Main_Page':
+            continue
+
+        try:
+            name = unquote(key).replace('_', ' ')
+        except Exception:
+             continue
+
+        if not name.strip():
+            continue
+
+        if name not in seen:
+            seen.add(name)
+            links.append(name)
             if len(links) >= limit:
                 break
+
     return title, links
+
 
 
 async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
@@ -333,7 +370,7 @@ async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
     )
 
     if not title:
-        raise ValueError(f"Nessun sitelink 'enwiki' trovato per QID {qid}")
+        title = ''
     
     return title
 
@@ -343,18 +380,18 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
     """
     Asynchronous parallel BFS on Wikipedia links.
     """
-    
+  
     G = nx.DiGraph()
     async with aiohttp.ClientSession() as session:
+        tasks = {}  # mapping di Task -> (node, depth)
         title = await get_name_from_wikidata(session, qid)
-    
+       
+        if title == '':
+            return G
         G.add_node(title, count=1)
-
         visited = {title}
         queue = deque([(title, 0)])
         start_time = asyncio.get_event_loop().time()
-        tasks = {}  # mapping di Task -> (node, depth)
-
         while queue or tasks:
             # Pump: submit new tasks until max_concurrent
             while queue and len(tasks) < max_concurrent:
@@ -372,8 +409,11 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
             done, _ = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
             for task in done:
                 node, depth = tasks.pop(task)
-                base_title, links = task.result()
-                
+                try:
+                    base_title, links = task.result()
+                except Exception as e:
+                    print(f"Errore sul nodo {node}: {e}")
+                    continue
 
                 # Updates graph and appends new links
                 for link in links:
@@ -480,11 +520,11 @@ def batch_generator(df:pd.DataFrame, batch_size:int):
 if __name__ == "__main__":
     # Builds a directed graph
     G = nx.DiGraph()
-    start_page = "God"
+    start_page = "QFFF"
     conn = Wiki_high_conn()
     limit = 10      # Numero massimo di link per pagina
     max_depth = 10    # Profondità massima
-    G = BFS2_Links_Parallel(start_page, 9, 4, 0.50)
+    G = BFS2_Links_Parallel(start_page, 3, 15, 0.50)
 
     print("G parameter:", G)
     draw_and_save_graph(G, layout='kamada_kawai')
