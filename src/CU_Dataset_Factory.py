@@ -6,7 +6,7 @@ from requests import get
 from tqdm import tqdm
 from datasets import load_dataset
 from utils import batch_generator
-from features import count_references, dominant_langs, langs_length, G_factor
+from features import *
 from Connection import Wiki_high_conn
 
 # Class to append the new features to the dataset and produce the new dataset
@@ -117,6 +117,7 @@ class CU_Dataset_Factory:
                     prc_result[feature] = dataset[feature]
             else:
                 exstra.append(feature)
+                prc_result[feature] = 0
 
         # Elaborazione batch
         batch_cc = 0
@@ -124,32 +125,44 @@ class CU_Dataset_Factory:
         for batch in batch_generator(dataset, batch_size=batch_s):  # type: ignore
             batch_cc += 1
             t.set_postfix({"batch": batch_cc})
-            
             original_batch_len = len(batch)
 
             for feature in exstra:
+                
                 t.set_description(feature, refresh=True)
-                if feature == "reference":    
-                    batch = count_references(batch.copy(), self.conn)
+                if feature == "reference":
+                    join_fe = 'wiki_name' 
+                    r = count_references(batch[join_fe], self.conn)
                 elif feature == "languages":
-                    batch = dominant_langs(batch.copy(), self.conn)
+                    join_fe = 'qid'
+                    r = dominant_langs(batch[join_fe], self.conn)
                 elif feature == "length_lan":
-                    batch = langs_length(batch.copy(), self.conn)
+                    join_fe = 'qid' 
+                    r = langs_length(batch[join_fe], self.conn)
                 elif feature == 'G':
+                    join_fe = 'wiki_name'
                     mask = list(self.sgf)
-                    batch = G_factor(batch.copy(), 10, 300, 50, threads=1)
-                    prc_result.loc[batch.index, mask] = batch[mask]
+                    r = G_factor(batch[join_fe], batch['qid'], 1, 1, 1, 10, threads=1)
+                    
+                    prc_result.loc[r.index, mask] = r[mask]
+                    prc_result  = prc_result.drop('G')
                     continue # add new features  this ...
                 elif feature == 'n_mod': # contare il numero medio di modifiche in un intervallo di tempo specifico
-                    pass
+                    join_fe = 'wiki_name' 
+                    r = num_mod(batch[join_fe], self.conn)
+                    
                 elif feature == 'n_visits': # contare il numero medio di visite al giorno in un intervallo di tempo
                     pass 
+                elif feature == 'ambiguos':
+                    join_fe = 'qid' 
+                    batch = is_disambiguation(batch[join_fe], conn)
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
+                # (dopo aver inizializzato la colonna fuori dal loop)
+                delta = prc_result[join_fe].map(r).fillna(0)
+                prc_result.loc[:, feature] = prc_result[feature].add(delta, fill_value=0)
                 
-                prc_result.loc[batch.index, feature] = batch[feature]
-            
             t.update(original_batch_len)
 
         t.close()
@@ -177,11 +190,12 @@ class CU_Dataset_Factory:
             product = prc_validation
 
         return product
+    
     def produce_one_entry(self, entry: pd.Series, encoding: bool = False) -> pd.DataFrame:
         pass
 
 
 if __name__ == '__main__':
     d = CU_Dataset_Factory(load=True)
-    print(d.validation.head(10))
-    d.produce(out_dir=path.PosixPath('.'), batch_s=10, enable_feature=['label', 'wiki_name', 'qid', 'languages'],targe_feature='label', train=False)
+    #print(d.validation.head(10))
+    d.produce(out_dir=path.PosixPath('.'), batch_s=10, enable_feature=['label', 'wiki_name', 'qid', 'languages', 'G'],targe_feature='label', train=False)

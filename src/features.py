@@ -3,27 +3,46 @@ import networkx as nx
 import nltk
 import numpy as np
 import requests
-from datasets import load_dataset
 from Connection import Wiki_high_conn
-from utils import extract_entity_name, extract_entity_id, BFS2_Links_Parallel
+from utils import extract_entity_name, BFS2_Links_Parallel
 
-def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
+#################
+# Page features #
+#################
+
+def is_disambiguation(queries:pd.Series, conn:Wiki_high_conn):
+    """
+    Controlla se una singola pagina Wikipedia è una pagina di disambiguazione.
+    """
+    titles = queries.to_list()
+    params = {
+        "action": "query",
+        "format": "json",
+        "prop": "pageprops"
+    }
+    r = {}
+    response = conn.get_wikipedia(titles, params=params)
+    pages = response["query"]["pages"]
+    for page in pages.values():
+        r[page.get('title', '')] = "disambiguation" in page.get("pageprops", {})
+    
+    return r
+            
+
+#OK
+def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]: # SERVE REVISIONE SUL NOME UTILIZZATI PER LA JOINT
     """
     Features Exstractor: Given a batch of Wikipedia links, 
     determines how many references each page has in `queries`
         
     Args:
-        queries (list[str]): List of Wikipedia entity URLs.
+        queries (pd.Dataframe):  Wikipedia entity URLs.
         params (dict[str, str]): API parameters.
         
     Returns:
         dict: The JSON response from the Wikipedia API.
     """
 
-    
-    ids = queries['name']
-    idq = queries['item']
-    ids = extract_entity_name(ids)
     params = {
         "action": "query",
         "prop": "extlinks",
@@ -31,26 +50,17 @@ def count_references(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFram
         "format": "json"
     }
     
-    try:
-        data = conn.get_wikipedia(ids, params=params)
-    except requests.HTTPError as err:
-        if err.response.status_code == 404:
-            # try research page via wikidata APIs
-            data = conn.get_wikidata2wikipedia(idq, params)
-            if data != {}:
-                print(f'pages found in wikidata')
-    
+    data = conn.get_wikipedia(queries.to_list(), params=params)
+    r = {}
     pages = data.get("query", {}).get("pages", {})
     for page_id, page in pages.items():
         title = page.get("title", f"page_{page_id}")
         links = page.get("extlinks", [])
-        
-        queries.loc[queries['name'].str.contains(title, case=False, na=False, regex=False), 'reference'] = len(links)
-    
-    
-    return queries
+        r[title] = len(links)
 
-def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
+    return r
+#OK
+def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
     of the top 10 Wikimedia languages each page is available.
@@ -70,28 +80,24 @@ def dominant_langs(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     out = {}
     dominant = set(['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja'])
     
-    ids = queries['item']
-    ids = extract_entity_id(ids)
-    
-    r = conn.get_wikidata(ids, params={
+    r = conn.get_wikidata(queries.to_list(), params={
         "action": "wbgetentities",
         "props": "sitelinks",
-        "ids": "|".join(ids),
         "format": "json"
     })  # r['entities'] => dict{ id_page: {sitelinks} }
     
     
     result:dict =r.get('entities', {})
 
+    r = {}
     for page in result:
         
         sl = list(result[page].get('sitelinks', {}).keys())
         lg = [l.removesuffix('wiki') for l in sl] 
         lang_av = dominant.intersection(lg)
-        out[page] = lang_av
-        queries.loc[queries['item'].str.contains(page, case=False, na=False), 'languages'] = len(lang_av)
+        r[page] = len(lang_av)
     
-    return queries
+    return r
 
 # wrong description, change it
 def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
@@ -179,72 +185,195 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
 
     return queries
 
-def G_factor(queries: pd.DataFrame, depth:int, limit:int, time_limit) -> pd.DataFrame:
+####################
+# Network features # 
+####################
+
+def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_nodes: int, time_limit: float | None = None, threads: int = 16) -> pd.DataFrame:
     
-    # For each query in DataFrame
-    for q, qid in zip( queries['name'], queries['item']):
-        qid = extract_entity_id([qid])[0]
+    # Initialize columns for raw metrics
+    raw_cols = [
+        'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg',
+        'G_num_components', 'G_largest_component_size',
+        'G_largest_component_ratio', 'G_avg_component_size',
+        'G_isolated_nodes', 'G_density'
+    ]
+
+    fe = {}
+    r = {}
+    
+
+    # Compute raw metrics per query
+    for q, qid in zip(titles, qids):
+        for col in raw_cols:
+            r[col] = 0.0
+
         try:
-            G = BFS2_Links_Parallel(qid,limit, depth, time_limit, 20)
+            G = BFS2_Links_Parallel(qid, limit, depth, max_nodes, time_limit, threads)
         except requests.HTTPError as err:
-            print(err)
-            return queries
-        
-        if G.number_of_nodes() == 0:
-            mask = queries['name'].str.contains(q, case=False, regex=False, na=False)
-            queries.loc[mask, 'G_mean_pr'] = 0
-            queries.loc[mask, 'G_nodes'] = 0
-            queries.loc[mask, 'G_num_cliques'] = 0
-            queries.loc[mask, 'G_rank'] = 0
-            queries.loc[mask, 'G_avg'] = 0
-            queries.loc[mask, 'G_diameter'] = 0
+            print(f"HTTP error for {q}: {err}")
             continue
 
+        if G.number_of_nodes() == 0:
+            continue
 
-        # Computes the mean number of occurrences (recurrent nodes)
-        total_count = sum(G.nodes[node].get('count', 0) for node in G.nodes)
-        avg_count = total_count / G.number_of_nodes() if G.number_of_nodes() else 0
-        
-        # Converts the graph in a undirected version only once
-        UG = G.to_undirected()
-        
-        # Number of nodes in the graph
-        num_nodes = G.number_of_nodes()
-        
-        # Computes the PageRank only once
+        # Mean occurrences
+        total_count = sum(G.nodes[n].get('count', 0) for n in G.nodes)
+        avg_count = total_count / G.number_of_nodes()
+
+        # PageRank
         pr = nx.pagerank(G)
-        page_rank = pr.get(q, 0)
-        # Uses the median of the PageRanks as "G_mean_pr"
         pr_values = list(pr.values())
-        mean_pr = np.median(pr_values) if pr_values else 0
-        
-        # Computes the number of clicks in UG: we iterate directly on the generator
-        num_cliques = sum(1 for _ in nx.find_cliques(UG)) / (2 ** G.number_of_nodes() - 1)
-        
-        # Creates a mask to update the rows containing the name 'q'
-        
-        mask = queries['name'].str.contains(q, case=False, regex=False, na=False)
-        queries.loc[mask, 'G_mean_pr'] = mean_pr
-        queries.loc[mask, 'G_nodes'] = num_nodes
-        queries.loc[mask, 'G_num_cliques'] = num_cliques
-        queries.loc[mask, 'G_rank'] = page_rank
-        queries.loc[mask, 'G_avg'] = avg_count
-        queries.loc[mask, 'G_diameter'] = nx.diameter(UG) if nx.is_connected(UG) else 0
-    return queries
+        mean_pager = np.median(pr_values) if pr_values else 0.0
 
-if __name__ == '__main__':
-    link = ['http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947','http://www.wikidata.org/entity/Q32786', 'http://www.wikidata.org/entity/Q371', 'http://www.wikidata.org/entity/Q3729947']
-    conn = Wiki_high_conn()
-    dataset_t = load_dataset('sapienzanlp/nlp2025_hw1_cultural_dataset',)['validation'].to_pandas().loc[90:100]  # type: ignore
+        # Undirected graph
+        UG = G.to_undirected()
+        num_nodes = UG.number_of_nodes()
+
+        # Clique count
+        raw_cliques = sum(1 for _ in nx.find_cliques(UG))
+
+        # Component features
+        components = list(nx.connected_components(UG))
+        component_sizes = [len(c) for c in components]
+        largest_component_size = max(component_sizes)
+        largest_component_ratio = largest_component_size / num_nodes
+        avg_component_size = np.mean(component_sizes)
+        isolated_nodes = sum(1 for n in UG.nodes if UG.degree[n] == 0)
+        density = nx.density(UG)
+
+        # Assign metrics
+        
+        r['G_mean_pr'] = mean_pager
+        r['G_nodes'] = num_nodes
+        r['G_num_cliques'] = raw_cliques
+        r['G_avg'] = avg_count
+
+        r['G_num_components'] = len(components)
+        r['G_largest_component_size'] = largest_component_size
+        r['G_largest_component_ratio'] = largest_component_ratio
+        r['G_avg_component_size'] = avg_component_size
+        r['G_isolated_nodes'] = isolated_nodes
+        r['G_density'] = density
+        fe[q] = r.copy()
+    # Normalize selected metrics
+        
+    to_norm = [
+        'G_nodes', 'G_num_cliques', 'G_avg',
+        'G_num_components', 'G_largest_component_size',
+        'G_avg_component_size', 'G_isolated_nodes', 'G_density'
+    ]
     
-    #extract_entity_name(["https://en.wikipedia.org/wiki/Human"])
-    count_references(dataset_t, conn)
-    dominant_langs(dataset_t, conn)
-    langs_length(dataset_t, conn)
-    G_factor(dataset_t, 9, 6, 0.50)
-    #print(dataset_t)
-    print(dataset_t[['label','G_mean_pr', 'G_nodes', 'G_diameter', 'G_num_cliques', 'G_rank', "G_avg" 'G']])
-    conn.clear_cache()
-    dataset_t.to_csv('prova.csv')
+
+    fe = pd.DataFrame(fe).transpose()
+    
+    fe.insert(0,'wiki_name', fe.index)
+    fe = fe.reset_index()
+ 
+    for col in to_norm:
+        min_val = fe[col].min()
+        max_val = fe[col].max()
+        if max_val > min_val:
+            fe[col] = (fe[col] - min_val) / (max_val - min_val)
+        else:
+            fe[col] = 0.0
+    return fe
+
+
+def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
+    
+   
+    
+    # Ottieni titoli Wikipedia dalle entità Wikidata
+    r = {} 
+    for title in queries:
+        r[title] = 0
+        PARAMS = {
+            "action": "query",
+            "format": "json",
+            "list": "backlinks",
+            "bltitle": title,
+            "bllimit": "max",
+            "blnamespace": 0
+            }
+        while True:
+            data = conn.get_wikipedia(title,PARAMS)
+            links = data.get("query", {}).get("backlinks", [])
+            r[title] += len(links)
+        
+            if "continue" in data:
+                PARAMS.update(data["continue"])
+            else:
+                break
+
+    # Aggiungi la colonna con i backlink nel DataFrame
+    #queries['backlink_count'] = queries['item'].map(backlinks_count).fillna(0).astype(int)
+    return r
+
+###################
+# Users Feactures #
+###################
+
+def num_users(queries: pd.Series) -> dict[str, int]:
+    return {}
+
+
+
+def num_mod(queries:pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
+    result = {}
+    for title in queries.tolist():
+        users = set()
+
+        # Costruiamo i parametri di base per questa pagina
+        params = {
+            "action": "query",
+            "format": "json",
+            "prop": "revisions",
+            "rvprop": "user",    # prendo solo lo user
+            "rvlimit": "500",    
+            "titles": title
+        }
+
+        while True:
+            # Esegui la chiamata
+            response = conn.get_wikipedia([title], params)
+            data = response.get("query", {})
+            pages = data.get("pages", {})
+
+            # Raccogliamo gli utenti da tutte le revisioni in questo batch
+            for page in pages.values():
+                for rev in page.get("revisions", []):
+                    if "user" in rev:
+                        users.add(rev["user"])
+
+            # Se c'è il token di continuazione, aggiornalo e ripeti
+            if "continue" in response:
+                params.update(response["continue"])
+            else:
+                break
+
+        # Salvo il conteggio degli utenti unici
+        result[title] = len(users)
+
+    return result
+    
+if __name__ == '__main__':
+    df = pd.DataFrame({'wiki_name':['Rome', 'London', 'A', 'python'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
+   
+    conn = Wiki_high_conn()
+
+    ref = count_references(df['wiki_name'], conn)
+
+    df['ref'] = df['wiki_name'].map(ref).fillna(0)
+    dom = dominant_langs(df['qid'], conn)
+    print(dom)
+    df['lang'] = df['qid'].map(dom).fillna(0)
+    g = G_factor(df['wiki_name'], df['qid'], 10, 50, 50, 300, 1)
+    #c = back_links(df['wiki_name'], conn)
+    dis = is_disambiguation(df['wiki_name'], conn)
+    print(num_mod(df['wiki_name'], conn))
+    
+    
+    
 
     
