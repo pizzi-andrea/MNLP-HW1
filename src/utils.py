@@ -283,67 +283,83 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
     return G
 
 async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int):
+    """
+    Fetches a Wikipedia page, extracts internal links,
+    scores them by structural importance, and returns
+    the top `limit` titles by score.
+    """
+
+    title_encoded = quote(title.replace(" ", "_"), safe="()'!*")
     lang = "en"
-    url = f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"
+    url = f"https://{lang}.wikipedia.org/wiki/{title_encoded}"
 
-    try:
-        async with session.get(url) as resp:
-            resp.raise_for_status()
-            body = await resp.read()
-    except aiohttp.ClientError as e:
-        status = getattr(e, 'status', 'Unknown')
-        message = getattr(e, 'message', str(e))
-        raise aiohttp.ClientError(f"HTTP {status} for page '{title}'. Error: {message}") from e
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch page '{title}'. Error: {e}") from e
+    # Retry mechanism (backoff)
+    retries = 3
+    delay = 1.0
+    for attempt in range(retries):
+        try:
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                body = await resp.read()
+            break  # Success
+        except (aiohttp.ClientError, aiohttp.ServerDisconnectedError, asyncio.TimeoutError) as e:
+            if attempt < retries - 1:
+                await asyncio.sleep(delay * (2 ** attempt))  # backoff esponenziale
+                continue
+            else:
+                raise RuntimeError(f"Failed to fetch page '{title}'. Error: {e}") from e
+        
 
+    # Parse HTML and extract main content
     try:
         tree = html.fromstring(body)
-        content_div = tree.get_element_by_id('mw-content-text', None)
+        content_div = tree.get_element_by_id('mw-content-text')
         if content_div is None:
-            content_div = tree.find('.//div[contains(@class, "mw-parser-output")]')
-            if content_div is None:
-                 print(f"Warning: Could not find main content div for '{title}'. Returning empty list.")
-                 return title, []
-
+            divs = tree.xpath('//div[contains(@class, "mw-parser-output")]')
+            content_div = divs[0] if divs else None
+        if content_div is None:
+            print(f"Warning: Could not find main content for '{title}'.")
+            return title, []
     except Exception as e:
-         raise RuntimeError(f"Failed to parse HTML for page '{title}'. Error: {e}") from e
+        raise RuntimeError(f"Failed to parse HTML for page '{title}'. Error: {e}") from e
 
     seen = set()
-    links = []
+    scored_links = []
 
-    hrefs = content_div.xpath('.//p//a[starts-with(@href, "/wiki/")]/@href')
-
-    for href in hrefs:
+    # Extract all candidate anchors inside paragraphs, list items, and table cells
+    anchors = content_div.xpath('.//a[starts-with(@href, "/wiki/")]')
+    for a in anchors:
+        href = a.get('href', '')
         path = href.split('#', 1)[0]
-
         if not path.startswith('/wiki/'):
             continue
         key = path[len('/wiki/'):]
-
-        if ':' in key:
+        if ':' in key or key == 'Main_Page':
             continue
-
-        if key == 'Main_Page':
-            continue
-
         try:
             name = unquote(key).replace('_', ' ')
         except Exception:
-             continue
-
-        if not name.strip():
+            continue
+        if not name.strip() or name in seen:
             continue
 
-        if name not in seen:
+        # Structural scoring
+        score = 1.0
+        lineno = getattr(a, 'sourceline', 1) or 1
+        score += 1.0 / lineno
+        text = a.text_content() or ''
+        score += len(text.split()) * 0.1
+        if a.xpath('ancestor::nav') or a.xpath('ancestor::header'):
+            score += 0.5
+
+        if score >= 1.5:
             seen.add(name)
-            links.append(name)
-            if len(links) >= limit:
-                break
+            scored_links.append((name, score))
 
-    return title, links
+    scored_links.sort(key=lambda x: x[1], reverse=True)
+    ordered = [name for name, _ in scored_links[:limit]]
 
-
+    return title, ordered
 
 async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
     # 1) Ottieni il titolo della pagina Wikipedia EN da Wikidata
@@ -374,15 +390,15 @@ async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
     
     return title
 
-
 async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
-                          max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
+                          max_nodes:int|None = None, max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
     """
     Asynchronous parallel BFS on Wikipedia links.
     """
   
     G = nx.DiGraph()
-    async with aiohttp.ClientSession() as session:
+    
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15), connector=aiohttp.TCPConnector(limit=10)) as session:
         tasks = {}  # mapping di Task -> (node, depth)
         title = await get_name_from_wikidata(session, qid)
        
@@ -422,23 +438,21 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
                     else:
                         G.nodes[link]['count'] += 1
 
+                    if max_nodes is not None and G.number_of_nodes() >= max_nodes:
+                       
+                        return G
+
                     if not G.has_edge(base_title, link):
                         G.add_edge(base_title, link)
 
                     if depth + 1 <= max_depth and link not in visited:
                         visited.add(link)
                         queue.append((link, depth + 1))
-                    
-                    if link in visited:
-                        for n in G.neighbors(link):
-                            G.nodes[n].setdefault('count', 0)
-                            G.nodes[n]['count'] += 1
 
     return G
 
 
-
-def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int,
+def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int, max_nodes:int|None = None,
                        max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
     """
     Wrapper sincrono compatibile con ambienti che hanno già un event loop attivo.
@@ -450,15 +464,13 @@ def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int,
             import nest_asyncio
             nest_asyncio.apply()
             return loop.run_until_complete(
-                _BFS_Links_Async( qid,limit, max_depth, max_runtime, max_concurrent)
+                _BFS_Links_Async( qid,limit, max_depth, max_nodes, max_runtime, max_concurrent)
             )
     except RuntimeError:
         # No active loop: we can also use asyncio.run normally
         return asyncio.run(
-            _BFS_Links_Async(qid,limit, max_depth, max_runtime, max_concurrent)
+            _BFS_Links_Async( qid,limit, max_depth, max_nodes, max_runtime, max_concurrent)
         )
-
-
 
 def draw_and_save_graph(G: nx.DiGraph,
                         path: str = "graph.png",
@@ -510,8 +522,6 @@ def draw_and_save_graph(G: nx.DiGraph,
     plt.close()
     print(f"Graph saved in: {path}")
 
-
-
 def batch_generator(df:pd.DataFrame, batch_size:int):
     for i in range(0, len(df), batch_size):
         yield df.iloc[i:i+batch_size]
@@ -520,11 +530,11 @@ def batch_generator(df:pd.DataFrame, batch_size:int):
 if __name__ == "__main__":
     # Builds a directed graph
     G = nx.DiGraph()
-    start_page = "QFFF"
+    start_page = "Q2"
     conn = Wiki_high_conn()
     limit = 10      # Numero massimo di link per pagina
     max_depth = 10    # Profondità massima
-    G = BFS2_Links_Parallel(start_page, 3, 15, 0.50)
+    G = BFS2_Links_Parallel(start_page, limit=5, max_depth=50, max_nodes=100, max_concurrent=1)
 
     print("G parameter:", G)
     draw_and_save_graph(G, layout='kamada_kawai')

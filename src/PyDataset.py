@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import PosixPath
 class PyDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_file:PosixPath, features:list[str], target_label:str) -> None:
+    def __init__(self, dataset_file:PosixPath, features:list[str] | str, target_label:str) -> None:
         super().__init__()
         
         self._file = dataset_file
@@ -25,7 +25,10 @@ class PyDataset(torch.utils.data.Dataset):
         
         self._y = self._data[self._target].copy(deep=True).astype(np.float32).to_numpy()
         
-        self._X = self._data.drop(self._target, axis=1)[features].astype(np.int64).to_numpy()
+        if features == '*':
+            self._X = self._data.drop(self._target, axis=1).astype(np.int64).to_numpy()
+        else:
+            self._X = self._data.drop(self._target, axis=1)[features].astype(np.int64).to_numpy()
     
     
     def __len__(self) -> int:

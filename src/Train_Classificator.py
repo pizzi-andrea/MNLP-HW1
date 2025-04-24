@@ -1,5 +1,4 @@
 import torch
-import os
 import pandas as pd
 import time
 from torchmetrics.classification import MulticlassAccuracy, MulticlassAUROC, MulticlassF1Score, MulticlassPrecision, MulticlassRecall
