@@ -526,6 +526,9 @@ def batch_generator(df:pd.DataFrame, batch_size:int):
     for i in range(0, len(df), batch_size):
         yield df.iloc[i:i+batch_size]
 
+
+
+
 #  Test example
 if __name__ == "__main__":
     # Builds a directed graph

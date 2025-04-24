@@ -1,13 +1,59 @@
 import pandas as pd
 import pathlib as path
-import os
 from sklearn.preprocessing import LabelEncoder
-from requests import get
 from tqdm import tqdm
+from requests import get
 from datasets import load_dataset
 from utils import batch_generator
 from features import *
+from datasets.splits import NamedSplit
 from Connection import Wiki_high_conn
+from Loader import Loader
+from datasets import load_dataset
+from pathlib import PosixPath
+
+class Hf_Loader(Loader):
+    def __init__(self, hf_url:str, split:str|NamedSplit, limit:int|None = None) -> None:
+        super().__init__()
+        self.hf_url = hf_url
+        self.split = split
+        self.limit = limit
+        self.hf_cache = './hugging_dataset/'
+   
+    def get(self) -> pd.DataFrame:
+        df:pd.DataFrame = load_dataset(self.hf_url, cache_dir=self.hf_cache, split=self.split).to_pandas() # type: ignore
+        if self.limit:
+            return df.iloc[:self.limit, :]
+        else:
+            return df
+        
+
+class Local_Loader(Loader):
+    def __init__(self, file_path:str|PosixPath, limit:int|None = None) -> None:
+        super().__init__()
+        self.file_path = PosixPath(file_path)
+        self.limit = limit
+       
+   
+    def get(self) -> pd.DataFrame:
+        df = None
+        if self.file_path.suffix == 'tsv':
+            df  = pd.read_csv(self.file_path, sep='\t')
+            df = df.drop('Unnamed: 0', axis=1)
+        elif self.file_path.suffix == 'csv':
+            df  = pd.read_csv(self.file_path, sep=',')
+        else:
+            raise TypeError('File format Not supported')
+        
+        if self.limit:
+            return df.iloc[:self.limit, :]
+        else:
+            return df
+
+            
+        
+
+
 
 # Class to append the new features to the dataset and produce the new dataset
 class CU_Dataset_Factory:
@@ -16,11 +62,24 @@ class CU_Dataset_Factory:
     """
     def __init__(
         self,
-        load:bool = False,
+        out_dir:PosixPath|str
     ) -> None:
 
+        
+        self.out_dir = PosixPath(out_dir)
+        self.conn = Wiki_high_conn()
+        self.label_e = LabelEncoder()
+        self.sgf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_avg"}   # features about wikipedia network
+        self.pgf = {'languages', 'reference', 'ambiguos'}                           # features about page
+        self.pef = {'n_mod', 'n_visits'}                                # features about users
+        self.id = {'qid', 'wiki_name'}                                  # identification fields
+        pd.set_option("mode.chained_assignment", None)
+       
+        #self.train: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["train"].to_pandas()  # type: ignore
+        #self.validation: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["validation"].to_pandas()  # type: ignore
 
-        def __wiki_name(qids: list[str]) -> dict[str, str]:
+
+    def __wiki_name(self, qids: list[str]) -> dict[str, str]:
             def fetch_batch(qids_batch: list[str]) -> dict[str, str]:
                 # Parametri per l'API di Wikidata
                 params = {
@@ -48,41 +107,7 @@ class CU_Dataset_Factory:
                 qid_to_title.update(fetch_batch(batch))
 
             return qid_to_title
-
-        self._cache = path.PosixPath('./_cache')
-        self.conn = Wiki_high_conn()
-        self.label_e = LabelEncoder()
-        self.sgf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_avg"}
-        self.pgf = {'languages', 'reference'}
-        self.pef = {'n_mod', 'n_visits'}
-        self.id = {'qid', 'wiki_name'}
-        pd.set_option("mode.chained_assignment", None)
-        if not self._cache.exists():
-            os.mkdir(self._cache)
-        
-        if load and self._cache.exists() and self._cache.joinpath('base_train.csv').exists() and self._cache.joinpath('base_validation.csv').exists():
-            self.validation = pd.read_csv(self._cache.joinpath('base_validation.csv'), sep='\t')
-            self.train = pd.read_csv(self._cache.joinpath('base_train.csv'), sep='\t')
-
-            self.train = self.train.drop('Unnamed: 0', axis=1)
-            self.validation = self.validation.drop('Unnamed: 0', axis=1)
-        else:
-            self.train: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["train"].to_pandas()  # type: ignore
-            self.validation: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["validation"].to_pandas()  # type: ignore
-            self.train['qid'] = self.train['item'].str.extract(r'(Q\d+)', expand=False)
-            self.train = self.train.drop(['item', 'name'], axis=1)
-            self.validation['qid'] = self.validation['item'].str.extract(r'(Q\d+)', expand=False)
-            self.validation = self.validation.drop(['item', 'name'], axis=1)
-            self.train['wiki_name'] = self.train['qid'].map(__wiki_name(self.train['qid'].to_list())).fillna(0)
-            self.validation['wiki_name'] = self.validation['qid'].map(__wiki_name(self.validation['qid'].to_list())).fillna(0)
-
-            self.train.to_csv(self._cache.joinpath('base_train.csv'), sep='\t')
-            self.validation.to_csv(self._cache.joinpath('base_validation.csv'), sep='\t')
-
-                    
-               
-
-    # Hidden function that recursively appends the new features through a series of if
+    
     def __produce(self, dataset: pd.DataFrame, enable_feature:list[str], targe_feature:str, batch_s:int = 1, encode:bool= True) -> pd.DataFrame:
 
         prc_result = pd.DataFrame()
@@ -155,7 +180,7 @@ class CU_Dataset_Factory:
                     pass 
                 elif feature == 'ambiguos':
                     join_fe = 'qid' 
-                    batch = is_disambiguation(batch[join_fe], conn)
+                    batch = is_disambiguation(batch[join_fe], self.conn)
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
@@ -169,33 +194,31 @@ class CU_Dataset_Factory:
         return prc_result
 
     # Function that calls back __produce and returns the new dataset
-    def produce(self, out_dir: path.PosixPath, enable_feature:list[str], targe_feature:str, batch_s:int = 1, encoding: bool = False, train: bool = True) -> pd.DataFrame:
+    def produce(self, loader:Loader, out_file: path.PosixPath|str, enable_feature:list[str], targe_feature:str, batch_s:int = 1, encoding: bool = False, train: bool = True) -> pd.DataFrame|None:
         """
         Transforms Cultural dataset in new dataset with additional features or with a subset of features
         """
 
-        product = None
-        if not out_dir.exists():
-            os.mkdir(out_dir)
+        out_file = PosixPath(out_file)
+        
+        try:
+            dataset  = loader.get()
+        except Exception as err:
+            print(f'loader error {err}')
+            return None
 
-        if train:  # some cases need training set
-            prc_train = self.__produce(self.train, enable_feature, targe_feature, batch_s, encoding)
-            prc_train.to_csv(out_dir.joinpath("train.tsv"), sep="\t", mode="w")
-            product = prc_train
-        else:
-            prc_validation = self.__produce(self.validation, enable_feature, targe_feature, batch_s, encoding)
-            prc_validation.to_csv(
-                out_dir.joinpath("validation.tsv"), sep="\t", mode="w"
-            )
-            product = prc_validation
+        dataset['qid'] = dataset['item'].str.extract(r'(Q\d+)', expand=False)
+        dataset['wiki_name'] = dataset['qid'].map(self.__wiki_name(dataset['qid'].to_list())).fillna(0)
+        dataset = dataset.drop(['item', 'name'], axis=1)
+        prc = self.__produce(dataset, enable_feature, targe_feature, batch_s, encoding)
+        prc.to_csv(self.out_dir.joinpath(out_file), sep="\t", mode="w")
 
-        return product
-    
-    def produce_one_entry(self, entry: pd.Series, encoding: bool = False) -> pd.DataFrame:
-        pass
+       
+        return prc
 
 
 if __name__ == '__main__':
-    d = CU_Dataset_Factory(load=True)
+    l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", 'validation', None)
+    d = CU_Dataset_Factory(out_dir='.')
     #print(d.validation.head(10))
-    d.produce(out_dir=path.PosixPath('.'), batch_s=10, enable_feature=['label', 'wiki_name', 'qid', 'languages', 'G'],targe_feature='label', train=False)
+    d.produce(l, 'validation.tsv', batch_s=10, enable_feature=['label', 'wiki_name', 'qid', 'languages', 'reference', 'ambiguos'], targe_feature='label', train=False)

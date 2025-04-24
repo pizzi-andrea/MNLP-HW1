@@ -10,9 +10,9 @@ from utils import extract_entity_name, BFS2_Links_Parallel
 # Page features #
 #################
 
-def is_disambiguation(queries:pd.Series, conn:Wiki_high_conn):
+def is_disambiguation(queries: pd.Series, conn):
     """
-    Controlla se una singola pagina Wikipedia è una pagina di disambiguazione.
+    Controlla se ciascun titolo in `queries` è una pagina di disambiguazione Wikipedia.
     """
     titles = queries.to_list()
     params = {
@@ -20,13 +20,18 @@ def is_disambiguation(queries:pd.Series, conn:Wiki_high_conn):
         "format": "json",
         "prop": "pageprops"
     }
-    r = {}
-    response = conn.get_wikipedia(titles, params=params)
-    pages = response["query"]["pages"]
-    for page in pages.values():
-        r[page.get('title', '')] = "disambiguation" in page.get("pageprops", {})
     
-    return r
+    response = conn.get_wikipedia(titles,params=params)
+    pages = response.get("query", {}).get("pages", {})
+
+    results = {}
+    for page in pages.values():
+        title = page.get("title", "")
+        is_disambig = "disambiguation" in page.get("pageprops", {})
+        results[title] = is_disambig
+    
+    return results
+
             
 
 #OK
@@ -93,8 +98,8 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
         
         sl = list(result[page].get('sitelinks', {}).keys())
         lg = [l.removesuffix('wiki') for l in sl] 
-        lang_av = dominant.intersection(lg)
-        r[page] = len(lang_av)
+        
+        r[page] = len(lg)
     
     return r
 
