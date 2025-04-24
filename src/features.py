@@ -77,7 +77,6 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
     """
    
     result = {}
-    out = {}
     dominant = set(['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja'])
     
     r = conn.get_wikidata(queries.to_list(), params={
@@ -306,8 +305,7 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
             else:
                 break
 
-    # Aggiungi la colonna con i backlink nel DataFrame
-    #queries['backlink_count'] = queries['item'].map(backlinks_count).fillna(0).astype(int)
+    
     return r
 
 ###################
@@ -372,8 +370,5 @@ if __name__ == '__main__':
     #c = back_links(df['wiki_name'], conn)
     dis = is_disambiguation(df['wiki_name'], conn)
     print(num_mod(df['wiki_name'], conn))
-    
-    
-    
 
     
