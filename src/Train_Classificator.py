@@ -11,11 +11,13 @@ class Train_Classificator:
     """
     Generic Class use to train pytorch model on `Cultural_Dataset`
     """
+
     def __init__(self, model, loss_fn:torch.nn.CrossEntropyLoss, optimizer:Optimizer) -> None:
         """
         Initialize Train class
 
         """
+
         self.__loss = loss_fn
         self.__model = model 
         self.__optimizer = optimizer
@@ -27,10 +29,8 @@ class Train_Classificator:
         self.__auc = MulticlassAUROC(num_classes=3).to(self.device)
         self.__recall = MulticlassRecall(num_classes=3).to(self.device)
         
-    def fit(self,
-            train_loader: DataLoader,
-            out_folder: PosixPath,
-            epochs: int = 1) -> pd.DataFrame:
+
+    def fit(self, train_loader: DataLoader, out_folder: PosixPath, epochs: int = 1) -> pd.DataFrame:
         """
         Fit the model e restituisce un DataFrame con i seguenti metrics per ogni epoch:
         - loss
@@ -40,7 +40,8 @@ class Train_Classificator:
         - F1
         - AUC
         """
-        # Sposto model e criteri su device
+
+        # Move model and criteria on device
         self.__model   = self.__model.to(self.device)
         self.__loss    = self.__loss.to(self.device)
         self.__accuracy = self.__accuracy.to(self.device)
@@ -49,10 +50,10 @@ class Train_Classificator:
         self.__f1       = self.__f1.to(self.device)
         self.__auc      = self.__auc.to(self.device)
 
-        # Preparazione output folder
+        # Output folder preparation
         out_folder.mkdir(exist_ok=True)
 
-        # Storage dei metrics
+        # Storage of metrics
         metrics = {
             'loss': [],
             'accuracy': [],
@@ -63,7 +64,7 @@ class Train_Classificator:
         }
 
         for epoch in range(1, epochs+1):
-            # Azzeramento dei metrics
+            # Zeroing the metrics
             self.__accuracy.reset()
             self.__recall.reset()
             self.__precision.reset()
@@ -75,35 +76,35 @@ class Train_Classificator:
 
             self.__model.train()
             for X, y in tqdm(train_loader, desc=f"Epoch {epoch}", leave=True):
-                # 1) Preparo i batch su device e nel tipo corretto
+                # 1) Prepare batches on device and in correct type
                 X = X.to(self.device).float()
                 y = y.to(self.device).long()
 
-                # 2) Azzeramento gradienti
+                # 2) Zeroing gradients
                 self.__optimizer.zero_grad()
 
                 # 3) Forward
                 logits = self.__model(X)
 
-                # 4) Calcolo loss
-                loss = self.__loss(logits, y)   # ora loss è un tensor float32
+                # 4) Loss computation
+                loss = self.__loss(logits, y)   # Now loss is a tensor float32
 
                 # 5) Backward + step
                 loss.backward()
                 self.__optimizer.step()
 
-                # 6) Aggiorno i metrics streaming
+                # 6) Update streaming metrics 
                 self.__accuracy.update(logits, y)
                 self.__recall.update(logits, y)
                 self.__precision.update(logits, y)
                 self.__f1.update(logits, y)
                 self.__auc.update(logits, y)
 
-                # 7) Accumulo loss scalare
+                # 7) Accumulate scalar loss
                 epoch_loss += loss.item()
                 n_batches += 1
 
-            # Fine epoch: calcolo valori medi
+            # End of epoch: computation of mean values
             avg_loss = epoch_loss / n_batches
             metrics['loss'].append(avg_loss)
             metrics['accuracy'].append(self.__accuracy.compute().item())
@@ -112,11 +113,11 @@ class Train_Classificator:
             metrics['F1'].append(self.__f1.compute().item())
             metrics['AUC'].append(self.__auc.compute().item())
 
-        # Salvo i results
+        # Save results
         df = pd.DataFrame(metrics)
         df.to_csv(out_folder / 'metrics.csv', index=False)
 
-        # Checkpoint finale
+        # Final checkpoint
         ckpt = {
             'epoch': epochs,
             'model_state_dict': self.__model.state_dict(),
@@ -126,15 +127,19 @@ class Train_Classificator:
 
         return df
     
+
     def get_model(self) -> torch.nn.Module:
         """
         Return the model
         """
+        
         return self.__model
     
+
     def fit_and_get(self, train_dataset:DataLoader, out_folder:PosixPath, epochs:int=1) -> torch.nn.Module:
         """
         Fit current model and return fitted model
         """
+
         self.fit(train_dataset, out_folder, epochs)
         return self.get_model()

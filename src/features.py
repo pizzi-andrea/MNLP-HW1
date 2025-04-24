@@ -6,14 +6,17 @@ import requests
 from Connection import Wiki_high_conn
 from utils import extract_entity_name, BFS2_Links_Parallel
 
+
 #################
 # Page features #
 #################
 
+
 def is_disambiguation(queries: pd.Series, conn):
     """
-    Controlla se ciascun titolo in `queries` è una pagina di disambiguazione Wikipedia.
+    Controls if any title in `queries` is a Wikipedia's disambiguation page.
     """
+
     titles = queries.to_list()
     params = {
         "action": "query",
@@ -32,10 +35,8 @@ def is_disambiguation(queries: pd.Series, conn):
     
     return results
 
-            
 
-#OK
-def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]: # SERVE REVISIONE SUL NOME UTILIZZATI PER LA JOINT
+def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
     """
     Features Exstractor: Given a batch of Wikipedia links, 
     determines how many references each page has in `queries`
@@ -64,7 +65,8 @@ def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list
         r[title] = len(links)
 
     return r
-#OK
+
+
 def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
@@ -78,7 +80,7 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
         batch (int, optional): Batch size for API requests. Defaults to 1.
 
     Returns:
-        dict[str, set[str]]: A `dictionary` mapping entity IDs to sets of available language codes.
+        dict[str, set[str]]: A dictionary mapping entity IDs to sets of available language codes.
     """
    
     result = {}
@@ -88,8 +90,7 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
         "action": "wbgetentities",
         "props": "sitelinks",
         "format": "json"
-    })  # r['entities'] => dict{ id_page: {sitelinks} }
-    
+    })
     
     result:dict =r.get('entities', {})
 
@@ -103,7 +104,7 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
     
     return r
 
-# wrong description, change it
+
 def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines how many words each page 
@@ -111,7 +112,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
 
     Top languages considered: ['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja']
     
-    Args: CHANGE!!!
+    Args:
         queries (list[str]): List of Wikidata entity URLs.
         conn (Wiki_high_conn): An active Wiki_high_conn instance.
         batch (int, optional): Batch size for API requests. Defaults to 1.
@@ -124,7 +125,6 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     out = {}
     dominant = set(['enwiki', 'eswiki', 'frwiki', 'dewiki', 'ptwiki', 'itwiki'])
     
-    
     # Gets Wikimedia ids
     ids = queries['item']
     ids = extract_entity_name(ids)
@@ -136,7 +136,6 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
         "props": "sitelinks",
         "format": "json"
     })
-    
   
     result = r['entities']
 
@@ -171,7 +170,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
         
         total_words = 0
         valid_pages = 0
-        # for each page written in a different language, count words
+        # For each page written in a different language, count words
         for page_id in pages.keys():
             extract = pages[page_id].get('extract', '')
             if extract:
@@ -179,7 +178,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
                 total_words += word_count
                 valid_pages += 1
         
-       # compute standard mean 
+       # Compute standard mean 
         if valid_pages > 0:
             mean_word_count = total_words //valid_pages
             
@@ -189,12 +188,29 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
 
     return queries
 
+
 ####################
 # Network features # 
 ####################
 
+
 def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_nodes: int, time_limit: float | None = None, threads: int = 16) -> pd.DataFrame:
-    
+    """
+    Feature extractor: Given a batch of Wikipedia entity links, computes various network metrics.
+
+    Args:
+        titles (pd.Series): List of Wikipedia page titles.
+        qids (pd.Series): List of Wikidata entity IDs.
+        limit (int): Maximum number of nodes to consider.
+        depth (int): Depth for BFS traversal.
+        max_nodes (int): Maximum number of nodes to fetch.
+        time_limit (float | None, optional): Time limit for BFS traversal. Defaults to None.
+        threads (int, optional): Number of threads for parallel processing. Defaults to 16.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing various network metrics for each title.
+    """
+
     # Initialize columns for raw metrics
     raw_cols = [
         'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg',
@@ -205,7 +221,6 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
     fe = {}
     r = {}
-    
 
     # Compute raw metrics per query
     for q, qid in zip(titles, qids):
@@ -234,7 +249,7 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         UG = G.to_undirected()
         num_nodes = UG.number_of_nodes()
 
-        # Clique count
+        # Cliques count
         raw_cliques = sum(1 for _ in nx.find_cliques(UG))
 
         # Component features
@@ -247,12 +262,10 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         density = nx.density(UG)
 
         # Assign metrics
-        
         r['G_mean_pr'] = mean_pager
         r['G_nodes'] = num_nodes
         r['G_num_cliques'] = raw_cliques
         r['G_avg'] = avg_count
-
         r['G_num_components'] = len(components)
         r['G_largest_component_size'] = largest_component_size
         r['G_largest_component_ratio'] = largest_component_ratio
@@ -260,14 +273,13 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         r['G_isolated_nodes'] = isolated_nodes
         r['G_density'] = density
         fe[q] = r.copy()
-    # Normalize selected metrics
-        
+    
+    # Normalize selected metrics  
     to_norm = [
         'G_nodes', 'G_num_cliques', 'G_avg',
         'G_num_components', 'G_largest_component_size',
         'G_avg_component_size', 'G_isolated_nodes', 'G_density'
     ]
-    
 
     fe = pd.DataFrame(fe).transpose()
     
@@ -285,10 +297,22 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
 
 def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
+    """
+    Feature extractor: Given a batch of Wikipedia entity links, returns the number of backlinks for each page.
+
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+        batch (int, optional): Batch size for API requests. Defaults to 1.
+
+    Returns:
+        dict[str, int]: A dictionary mapping Wikipedia page titles to their backlink counts.
+    """
     
-   
+    # The function uses the MediaWiki API to fetch backlinks for each title
+    # The API may have rate limits, so we use a delay between requests if processing a large number of titles
     
-    # Ottieni titoli Wikipedia dalle entità Wikidata
+    # Obtain Wikipedia's titles from Wikidata's entities
     r = {} 
     for title in queries:
         r[title] = 0
@@ -309,57 +333,74 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
                 PARAMS.update(data["continue"])
             else:
                 break
-
-    
     return r
 
+
 ###################
-# Users Feactures #
+# Users Features #
 ###################
 
+
+# Number of users who visited a page
 def num_users(queries: pd.Series) -> dict[str, int]:
     return {}
 
 
-
+# Number of edits of a page
 def num_mod(queries:pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
+    """
+    Feature extractor: Given a batch of Wikipedia page titles, returns the number of unique users who have edited each page.
+
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+        batch (int, optional): Batch size for API requests. Defaults to 1.
+    
+    Returns:
+        dict[str, int]: A dictionary mapping Wikipedia page titles to their unique user edit counts.
+    """
+
+    # The function uses the MediaWiki API to fetch revision history for each title
+    # The API may have rate limits, so we use a delay between requests if processing a large number of titles
+
     result = {}
     for title in queries.tolist():
         users = set()
 
-        # Costruiamo i parametri di base per questa pagina
+        # Build base parameters for this page
         params = {
             "action": "query",
             "format": "json",
             "prop": "revisions",
-            "rvprop": "user",    # prendo solo lo user
+            "rvprop": "user",    # only take the user
             "rvlimit": "500",    
             "titles": title
         }
 
         while True:
-            # Esegui la chiamata
+            # Execute the call
             response = conn.get_wikipedia([title], params)
             data = response.get("query", {})
             pages = data.get("pages", {})
 
-            # Raccogliamo gli utenti da tutte le revisioni in questo batch
+            # Gather users from all revisions in this batch
             for page in pages.values():
                 for rev in page.get("revisions", []):
                     if "user" in rev:
                         users.add(rev["user"])
 
-            # Se c'è il token di continuazione, aggiornalo e ripeti
+            # If continuity token exists, update it and repeat
             if "continue" in response:
                 params.update(response["continue"])
             else:
                 break
 
-        # Salvo il conteggio degli utenti unici
+        # Save the count of unique users
         result[title] = len(users)
 
     return result
     
+
 if __name__ == '__main__':
     df = pd.DataFrame({'wiki_name':['Rome', 'London', 'A', 'python'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
    
@@ -375,5 +416,4 @@ if __name__ == '__main__':
     #c = back_links(df['wiki_name'], conn)
     dis = is_disambiguation(df['wiki_name'], conn)
     print(num_mod(df['wiki_name'], conn))
-
     

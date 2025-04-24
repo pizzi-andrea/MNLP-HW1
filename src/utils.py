@@ -13,7 +13,6 @@ from collections import deque
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from lxml import html
-
 from urllib.parse import quote, unquote
 
 
@@ -28,8 +27,10 @@ def split_list(lst, n):
     Returns:
         list of lists: A list containing `n` sublists.
     """
+
     k, m = divmod(len(lst), n)
     return [lst[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
+
 
 def extract_entity_id(url: pd.DataFrame) -> list[str]:
     """
@@ -41,7 +42,9 @@ def extract_entity_id(url: pd.DataFrame) -> list[str]:
     Returns:
         list[str]: List of extracted entity IDs.
     """
+
     return [l.strip().split("/")[-1] for l in url]
+
 
 def extract_entity_name(url:pd.Series) -> list[str]:
     """
@@ -53,7 +56,9 @@ def extract_entity_name(url:pd.Series) -> list[str]:
     Returns:
         list[str]: List of extracted entity names.
     """
+
     return [l.strip().split("/")[-1].replace("_", " ") for l in url]
+
 
 def __parse_wikipedia_links(title, session, limit):
     encoded_title = title.replace(" ", "_")
@@ -93,11 +98,13 @@ def __parse_wikipedia_links(title, session, limit):
     except Exception:
         return title, []
 
+
 def parse_wikipedia_links(node, session, limit):
     """
     Calls parse_wikipedia_links(node, session, limit).  
     On ANY exception (network error, JSON error, None return), returns (node, []).
     """
+
     try:
         result = __parse_wikipedia_links(node, session, limit)
         # guard against somebody returning None
@@ -109,6 +116,7 @@ def parse_wikipedia_links(node, session, limit):
         # return an empty list of links so we can continue
         return node, []
 
+# USELESS
 def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_workers=16):
     G = nx.DiGraph()
     G.add_node(start_title, count=1)
@@ -119,10 +127,10 @@ def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_work
     start_time = time.time()
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # futures: mapping da Future a (node, depth)
+        # futures: mapping from Future to (node, depth)
         futures = {}
         
-        # Continua finché c'è qualcosa da inviare o da attendere
+        # Continues until c'è qualcosa da inviare o da attendere
         while queue or futures:
             # Pump: sottometti fino a max_workers task
             while queue and len(futures) < max_workers:
@@ -171,6 +179,7 @@ def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_work
     
     return G
 
+# USELESS
 def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None) -> nx.DiGraph:
     """
     Executes a BFS search on Wikipedia links, starting from the given title.
@@ -180,6 +189,7 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
       - Avoids duplicate requests using a cache
       - Controls the maximum runtime (max_runtime)
     """
+
     G = nx.DiGraph()
     response_cache = {}
     session = requests.Session()
@@ -282,6 +292,7 @@ def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None)
 
     return G
 
+
 async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int):
     """
     Fetches a Wikipedia page, extracts internal links,
@@ -304,7 +315,7 @@ async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int
             break  # Success
         except (aiohttp.ClientError, aiohttp.ServerDisconnectedError, asyncio.TimeoutError) as e:
             if attempt < retries - 1:
-                await asyncio.sleep(delay * (2 ** attempt))  # backoff esponenziale
+                await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff before doing another request
                 continue
             else:
                 raise RuntimeError(f"Failed to fetch page '{title}'. Error: {e}") from e
@@ -343,12 +354,14 @@ async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int
         if not name.strip() or name in seen:
             continue
 
-        # Structural scoring
+        # Structural scoring to links according to position
         score = 1.0
         lineno = getattr(a, 'sourceline', 1) or 1
         score += 1.0 / lineno
         text = a.text_content() or ''
         score += len(text.split()) * 0.1
+
+        # If in a list item, table cell, or header, gets +0.5 bonus
         if a.xpath('ancestor::nav') or a.xpath('ancestor::header'):
             score += 0.5
 
@@ -361,8 +374,9 @@ async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int
 
     return title, ordered
 
+
 async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
-    # 1) Ottieni il titolo della pagina Wikipedia EN da Wikidata
+    # 1) Get the title of the EN Wikipedia page from Wikidata
     wd_url = "https://www.wikidata.org/w/api.php"
     wd_params = {
         "action":     "wbgetentities",
@@ -390,8 +404,8 @@ async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
     
     return title
 
-async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
-                          max_nodes:int|None = None, max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
+
+async def _BFS_Links_Async(qid:str, limit: int, max_depth: int, max_nodes:int|None = None, max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
     """
     Asynchronous parallel BFS on Wikipedia links.
     """
@@ -399,7 +413,7 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
     G = nx.DiGraph()
     
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15), connector=aiohttp.TCPConnector(limit=10)) as session:
-        tasks = {}  # mapping di Task -> (node, depth)
+        tasks = {}  # Mapping of Task -> (node, depth)
         title = await get_name_from_wikidata(session, qid)
        
         if title == '':
@@ -452,11 +466,11 @@ async def _BFS_Links_Async(qid:str, limit: int, max_depth: int,
     return G
 
 
-def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int, max_nodes:int|None = None,
-                       max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
+def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int, max_nodes:int|None = None, max_runtime: float = None, max_concurrent: int = 16) -> nx.DiGraph:
     """
-    Wrapper sincrono compatibile con ambienti che hanno già un event loop attivo.
+    Synchronous Wrapper compatible with ambients already having an active event loop.
     """
+
     try:
         loop = asyncio.get_running_loop()
         if loop.is_running():
@@ -464,13 +478,14 @@ def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int, max_nodes:int|None 
             import nest_asyncio
             nest_asyncio.apply()
             return loop.run_until_complete(
-                _BFS_Links_Async( qid,limit, max_depth, max_nodes, max_runtime, max_concurrent)
+                _BFS_Links_Async(qid,limit, max_depth, max_nodes, max_runtime, max_concurrent)
             )
     except RuntimeError:
         # No active loop: we can also use asyncio.run normally
         return asyncio.run(
-            _BFS_Links_Async( qid,limit, max_depth, max_nodes, max_runtime, max_concurrent)
+            _BFS_Links_Async(qid,limit, max_depth, max_nodes, max_runtime, max_concurrent)
         )
+
 
 def draw_and_save_graph(G: nx.DiGraph,
                         path: str = "graph.png",
@@ -494,7 +509,7 @@ def draw_and_save_graph(G: nx.DiGraph,
       layout       : Type of layout: "spring", "kamada_kawai", "circular", "shell"…
     """
 
-    # Scegli il layout
+    # Choose the layout
     if layout == "spring":
         pos = nx.spring_layout(G, seed=42)
     elif layout == "kamada_kawai":
@@ -522,11 +537,10 @@ def draw_and_save_graph(G: nx.DiGraph,
     plt.close()
     print(f"Graph saved in: {path}")
 
+
 def batch_generator(df:pd.DataFrame, batch_size:int):
     for i in range(0, len(df), batch_size):
         yield df.iloc[i:i+batch_size]
-
-
 
 
 #  Test example

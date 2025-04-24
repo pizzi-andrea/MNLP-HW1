@@ -1,8 +1,9 @@
-from typing import override, Any
+from typing import Any
 import torch
 import numpy as np
 import pandas as pd
 from pathlib import PosixPath
+
 class PyDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_file:PosixPath, features:list[str] | str, target_label:str) -> None:
         super().__init__()
@@ -33,8 +34,4 @@ class PyDataset(torch.utils.data.Dataset):
     
     def __len__(self) -> int:
         return self._y.size
-    
-    @override
-    def __getitem__(self, index) -> tuple[Any, Any]:
-        return (self._X[index], self._y[index])
     

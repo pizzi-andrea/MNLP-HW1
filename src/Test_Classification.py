@@ -11,6 +11,7 @@ class Eval_Classificator:
     """
     Generic Class use to Evaluate pytorch model on `Cultural_Dataset`
     """
+
     def __init__(self, model, loss_fn) -> None:
         """
         Initialize Train class
@@ -27,6 +28,7 @@ class Eval_Classificator:
         self.__auc = MulticlassAUROC(num_classes=3).to(self.device)
         self.__recall = MulticlassRecall(num_classes=3).to(self.device)
         
+
     def eval(self, train_dataset:DataLoader, out_folder:PosixPath, epochs:int=1) -> pd.DataFrame:
         """
         Fit the `model` and compute standard accuracy metrics:
@@ -35,6 +37,7 @@ class Eval_Classificator:
             - `Precision`:
             - `F1 Score`:
         """
+        
         metrics = {
             'loss' :   [],
             'accuracy':[],
@@ -49,7 +52,7 @@ class Eval_Classificator:
 
         with torch.no_grad():
             for epoch in  range(epochs):
-                # init batch metrics
+                # Init batch metrics
                 batch_loss = 0.0
                 num_batches = 0
                 # Init Metrics
@@ -59,11 +62,11 @@ class Eval_Classificator:
                 self.__auc.reset()
                 self.__precision.reset()
 
-                # each element (sample) in train_dataset is a batch
+                # Each element (sample) in train_dataset is a batch
                 for step, (X, y) in tqdm(enumerate(train_dataset), desc="Batch", leave=False):
-                    # inputs in the batch
+                    # Inputs in the batch
                     inputs = X.to(self.device)
-                    # outputs in the batch
+                    # Outputs in the batch
                     targets = y.to(self.device)
 
                     # When you're using negative sampling, your model should not return full output_distribution (logits over vocab)

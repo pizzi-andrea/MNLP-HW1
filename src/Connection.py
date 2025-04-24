@@ -24,11 +24,13 @@ class Wiki_high_conn:
         )
         self.session = requests_cache.CachedSession()
 
+
     def set_lang(self,lang:str) -> None:
         """
         Sets default request language for Wikipedia API.
         """
         self._default_lang = lang
+
 
     def get_wikipedia(self, queries: list[str], params: dict[str, str], lang:str='') -> dict[str, Any]:
         """
@@ -50,9 +52,9 @@ class Wiki_high_conn:
         response = self.session.get(url, params=params)
         data = response.json()
         response.raise_for_status()
-       
-        
+
         return data
+
 
     def get_wikidata(self, queries: list[str], params: dict[str, str]) -> dict[str, Any]:
         """
@@ -78,16 +80,17 @@ class Wiki_high_conn:
         
         return data
     
+
     def get_wikidata2wikipedia(self, queriesId: list[str], feature:str = '') -> dict[str, str]:
         """
-        Restituisce una mappa {QID: titolo Wikipedia} per ciascun QID specificato.
+        Returns a map {QID: Wikipedia title} for every specified QID.
         
         Args:
-            queriesId (list[str]): Lista di ID Wikidata (es. ['Q42', 'Q7259']).
-            params (dict[str, str]): Parametri API (non usati qui, mantenuti per compatibilità).
+            queriesId (list[str]): List of Wikidata ID (es. ['Q42', 'Q7259']).
+            params (dict[str, str]): API parameters (not used here, kept for compatibility).
         
         Returns:
-            dict[str, str]: Mappa QID → Titolo Wikipedia (in lingua self._default_lang).
+            dict[str, str]: QID Map → Wikipedia title (in language self._default_lang).
         """
         p = {
             'action': 'wbgetentities',
@@ -113,11 +116,13 @@ class Wiki_high_conn:
                 continue
         return qid_to_title
 
+
     def clear_cache(self):
         """
         Clears the currently installed cache (if any)
         """
         requests_cache.clear()
+
 
 if __name__ == '__main__':
     print(f'[Test script for module {__file__}]')
