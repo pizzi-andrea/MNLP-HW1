@@ -6,7 +6,6 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassAUROC, Mul
 from tqdm import tqdm
 from pathlib import PosixPath
 from torch.utils.data import DataLoader
-from torch.optim import Optimizer
 
 class Eval_Classificator:
     """
