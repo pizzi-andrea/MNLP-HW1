@@ -158,7 +158,7 @@ class CU_Dataset_Factory:
                     join_fe = 'qid' 
                     r = langs_length(batch[join_fe], self.conn)
 
-                elif feature == 'G':
+                elif feature == "G":
                     join_fe = 'wiki_name'
                     mask = list(self.sgf)
                     r = G_factor(batch[join_fe], batch['qid'], 1, 1, 1, 10, threads=1)
@@ -166,16 +166,21 @@ class CU_Dataset_Factory:
                     prc_result  = prc_result.drop('G')
                     continue
 
-                elif feature == 'n_mod': # count the mean number of edits in a specific time interval
+                elif feature == "n_mod": # count the mean number of edits in a specific time interval
                     join_fe = 'wiki_name' 
                     r = num_mod(batch[join_fe], self.conn)
 
-                elif feature == 'n_visits': # count the mean number of visits per day in a time interval
-                    pass 
+                # elif feature == "n_visits": # count the mean number of visits per day in a time interval
+                #     join_fe = 'wiki_name'
+                #     r = num_users(batch[join_fe], self.conn) 
 
-                elif feature == 'ambiguos':
+                elif feature == "ambiguos":
                     join_fe = 'qid' 
                     batch = is_disambiguation(batch[join_fe], self.conn)
+
+                elif feature == "num_langs":
+                    join_fe = 'qid'
+                    r = num_langs(batch[join_fe], self.conn)
 
                 else:
                     raise ValueError(f"Label:{feature} not valid")

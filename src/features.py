@@ -94,6 +94,42 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
     
     result:dict =r.get('entities', {})
 
+    f = {}
+    for page in result:
+        
+        sl = list(result[page].get('sitelinks', {}).keys())
+        lg = [l.removesuffix('wiki') for l in sl] 
+        
+        i = len(dominant.intersection(lg))
+        f[page] = len(i)
+    
+    return f
+
+
+def num_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
+    """
+    Feature extractor: Given a batch of Wikidata entity links, determines in how many
+    languages each page is available.
+    
+    Args:
+        queries (list[str]): List of Wikidata entity URLs.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+        batch (int, optional): Batch size for API requests. Defaults to 1.
+
+    Returns:
+        dict[str, set[str]]: A dictionary mapping entity IDs to sets of available language codes.
+    """
+   
+    result = {}
+    
+    r = conn.get_wikidata(queries.to_list(), params={
+        "action": "wbgetentities",
+        "props": "sitelinks",
+        "format": "json"
+    })
+    
+    result:dict =r.get('entities', {})
+
     r = {}
     for page in result:
         
