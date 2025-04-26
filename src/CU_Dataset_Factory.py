@@ -116,7 +116,6 @@ class CU_Dataset_Factory:
             prc_result.insert(0, id_c, None)
             prc_result[id_c] = dataset[id_c]
 
-
         # Direct copy of existing columns in the dataset
         for feature in tqdm(enable_feature, desc="copy dataset"):
            
@@ -152,48 +151,61 @@ class CU_Dataset_Factory:
             for feature in exstra:
                 
                 t.set_description(feature, refresh=True)
+
+                # COUNT_REFERENCES
                 if feature == "reference":
                     join_fe = 'wiki_name' 
                     r = count_references(batch[join_fe], self.conn)
-
+                
+                # DOMINANT_LANGS
                 elif feature == "languages":
                     join_fe = 'qid'
                     r = dominant_langs(batch[join_fe], self.conn)
 
+                # LANGS_LENGTH
                 elif feature == "length_lan":
                     join_fe = 'qid'
                     r = langs_length(batch[join_fe], self.conn)
 
+                # G_FACTOR
                 elif feature == "G":
                     join_fe = 'wiki_name'
-                    mask = list(self.sgf)
-                    r = G_factor(batch[join_fe], batch['qid'], 1, 1, 1, 10, threads=1)
-                    prc_result.loc[r.index, mask] = r[mask]
-                    prc_result  = prc_result.drop('G')
+                    # mask = list(self.sgf)
+                    r = G_factor(batch[join_fe], batch['qid'], 10, 10, 20, None, threads=1)
+                    prc_result = pd.merge(prc_result, r, on="wiki_name", how="inner")
+                    print(prc_result)
                     continue
 
+                # NUM_MOD
                 elif feature == "n_mod": # count the mean number of edits in a specific time interval
                     join_fe = 'wiki_name' 
                     r = num_mod(batch[join_fe], self.conn)
 
+                # NUM_VISITS
                 # elif feature == "n_visits": # count the mean number of visits per day in a time interval
                 #     join_fe = 'wiki_name'
                 #     r = num_users(batch[join_fe], self.conn) 
 
+                # IS_DISAMBIGUATION
                 elif feature == "ambiguos":
                     join_fe = 'qid'
                     batch = is_disambiguation(batch[join_fe], self.conn)
 
+                # NUM_LANGS
                 elif feature == "num_langs":
                     join_fe = 'qid'
                     r = num_langs(batch[join_fe], self.conn)
+
+                # BACK_LINKS
+                elif feature == "back_links":
+                    join_fe = 'wiki_name'
+                    r = back_links(batch[join_fe], self.conn)
 
                 else:
                     raise ValueError(f"Label:{feature} not valid")
               
                 delta = prc_result[join_fe].map(r).fillna(0)
                 prc_result.loc[:, feature] = prc_result[feature].add(delta, fill_value=0)
-                
                 
             t.update(original_batch_len)
 
