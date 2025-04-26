@@ -64,7 +64,7 @@ pip3 install datasets
 pip3 install evaluate 
 pip3 install accelerate
 pip3 install hf_xet
-pip3 install 'accelerate>=0.26.0''
+pip3 install 'accelerate>=0.26.0'
 
 # install tools to access wikimedia project data and other modeling tools
 echo '[installing Wikimedia Tools]'
