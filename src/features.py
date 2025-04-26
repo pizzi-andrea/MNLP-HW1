@@ -99,9 +99,7 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
         
         sl = list(result[page].get('sitelinks', {}).keys())
         lg = [l.removesuffix('wiki') for l in sl] 
-        
-        i = len(dominant.intersection(lg))
-        f[page] = len(i)
+        f[page] = len(dominant.intersection(lg))
     
     return f
 

@@ -77,20 +77,20 @@ class CU_Dataset_Factory:
 
 
     def __wiki_name(self, qids: list[str]) -> dict[str, str]:
-        
-        def fetch_batch(qids_batch: list[str]) -> dict[str, str]:
+        conn = Wiki_high_conn()
+        def fetch_batch(qids_batch: list[str], conn:Wiki_high_conn) -> dict[str, str]:
 
             # Parameters for Wikidata's API
+            
             params = {
                 'action': 'wbgetentities',
-                'ids': '|'.join(qids_batch),
                 'sites': 'wikipedia',
                 'props': 'sitelinks',
                 'format': 'json',
                 'utf8': 1
             }
            
-            data = get('https://www.wikidata.org/w/api.php', params).json().get('entities', {})
+            data = conn.get_wikidata(qids_batch, params).get('entities', {})
             batch_map = {}
             for qid, entity in data.items():
                 sitelinks = entity.get('sitelinks', {})
@@ -101,9 +101,9 @@ class CU_Dataset_Factory:
 
         qid_to_title: dict[str, str] = {}
         batch_size = 50
-        for i in range(0, len(qids), batch_size):
+        for i in tqdm(range(0, len(qids), batch_size)):
             batch = qids[i:i + batch_size]
-            qid_to_title.update(fetch_batch(batch))
+            qid_to_title.update(fetch_batch(batch, conn))
         return qid_to_title
     
 
@@ -111,6 +111,11 @@ class CU_Dataset_Factory:
 
         prc_result = pd.DataFrame()
         exstra = []
+
+        for id_c in self.id:
+            prc_result.insert(0, id_c, None)
+            prc_result[id_c] = dataset[id_c]
+
 
         # Direct copy of existing columns in the dataset
         for feature in tqdm(enable_feature, desc="copy dataset"):
@@ -123,9 +128,6 @@ class CU_Dataset_Factory:
 
             if feature in dataset.columns.tolist():
                 if encode and not(feature in self.id) and (dataset[feature].dtype == pd.StringDtype() or dataset[feature].dtype == object):
-                    if feature == targe_feature:
-                        prc_result[feature] = self.label_e.fit_transform(dataset[feature])
-                    else:
                         dummies = pd.get_dummies(dataset[feature], dtype=pd.Int32Dtype(), prefix=feature)
                         prc_result = prc_result.drop(feature, axis=1)
                         prc_result = pd.concat([prc_result, dummies], axis=1)
@@ -134,6 +136,10 @@ class CU_Dataset_Factory:
             else:
                 exstra.append(feature)
                 prc_result[feature] = 0
+            
+            
+            prc_result[targe_feature] = self.label_e.fit_transform(dataset[targe_feature])
+            exstra.sort()
 
         # Batch elaboration
         batch_cc = 0
@@ -155,7 +161,7 @@ class CU_Dataset_Factory:
                     r = dominant_langs(batch[join_fe], self.conn)
 
                 elif feature == "length_lan":
-                    join_fe = 'qid' 
+                    join_fe = 'qid'
                     r = langs_length(batch[join_fe], self.conn)
 
                 elif feature == "G":
@@ -175,7 +181,7 @@ class CU_Dataset_Factory:
                 #     r = num_users(batch[join_fe], self.conn) 
 
                 elif feature == "ambiguos":
-                    join_fe = 'qid' 
+                    join_fe = 'qid'
                     batch = is_disambiguation(batch[join_fe], self.conn)
 
                 elif feature == "num_langs":
@@ -188,13 +194,14 @@ class CU_Dataset_Factory:
                 delta = prc_result[join_fe].map(r).fillna(0)
                 prc_result.loc[:, feature] = prc_result[feature].add(delta, fill_value=0)
                 
+                
             t.update(original_batch_len)
 
         t.close()
         return prc_result
 
 
-    def produce(self, loader:Loader, out_file: path.PosixPath|str, enable_feature:list[str], targe_feature:str, batch_s:int = 1, encoding: bool = False, train: bool = True) -> pd.DataFrame|None:
+    def produce(self, loader:Loader, out_file: path.PosixPath|str, enable_feature:list[str], targe_feature:str, batch_s:int = 1, encoding: bool = False) -> pd.DataFrame|None:
         """
         Transforms Cultural dataset in new dataset with additional features or with a subset of features
         """
