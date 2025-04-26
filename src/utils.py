@@ -313,7 +313,7 @@ async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int
                 resp.raise_for_status()
                 body = await resp.read()
             break  # Success
-        except (aiohttp.ClientError, aiohttp.ServerDisconnectedError, asyncio.TimeoutError) as e:
+        except (aiohttp.ClientError, aiohttp.ServerDisconnectedError, asyncio.TimeoutError, RuntimeError) as e:
             if attempt < retries - 1:
                 await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff before doing another request
                 continue

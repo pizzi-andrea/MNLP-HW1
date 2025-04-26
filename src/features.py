@@ -1,10 +1,11 @@
+from urllib.parse import quote
 import pandas as pd
 import networkx as nx
 import nltk
 import numpy as np
 import requests
 from Connection import Wiki_high_conn
-from utils import extract_entity_name, BFS2_Links_Parallel
+from utils import extract_entity_name, BFS2_Links_Parallel, fetch_and_parse
 
 
 #################
@@ -248,9 +249,7 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
     # Initialize columns for raw metrics
     raw_cols = [
         'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg',
-        'G_num_components', 'G_largest_component_size',
-        'G_largest_component_ratio', 'G_avg_component_size',
-        'G_isolated_nodes', 'G_density'
+        'G_num_components', 'G_largest_component_size','G_density'
     ]
 
     fe = {}
@@ -269,7 +268,8 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
         if G.number_of_nodes() == 0:
             continue
-
+        
+       
         # Mean occurrences
         total_count = sum(G.nodes[n].get('count', 0) for n in G.nodes)
         avg_count = total_count / G.number_of_nodes()
@@ -281,7 +281,7 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
         # Undirected graph
         UG = G.to_undirected()
-        num_nodes = UG.number_of_nodes()
+ 
 
         # Cliques count
         raw_cliques = sum(1 for _ in nx.find_cliques(UG))
@@ -290,43 +290,24 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         components = list(nx.connected_components(UG))
         component_sizes = [len(c) for c in components]
         largest_component_size = max(component_sizes)
-        largest_component_ratio = largest_component_size / num_nodes
-        avg_component_size = np.mean(component_sizes)
-        isolated_nodes = sum(1 for n in UG.nodes if UG.degree[n] == 0)
         density = nx.density(UG)
 
         # Assign metrics
         r['G_mean_pr'] = mean_pager
-        r['G_nodes'] = num_nodes
+        r['G_nodes'] = G.number_of_nodes()
         r['G_num_cliques'] = raw_cliques
         r['G_avg'] = avg_count
         r['G_num_components'] = len(components)
         r['G_largest_component_size'] = largest_component_size
-        r['G_largest_component_ratio'] = largest_component_ratio
-        r['G_avg_component_size'] = avg_component_size
-        r['G_isolated_nodes'] = isolated_nodes
         r['G_density'] = density
         fe[q] = r.copy()
     
     # Normalize selected metrics  
-    to_norm = [
-        'G_nodes', 'G_num_cliques', 'G_avg',
-        'G_num_components', 'G_largest_component_size',
-        'G_avg_component_size', 'G_isolated_nodes', 'G_density'
-    ]
+  
 
     fe = pd.DataFrame(fe).transpose()
+    fe = fe.reset_index().rename({'index':'wiki_name'}, axis=1)
     
-    fe.insert(0,'wiki_name', fe.index)
-    fe = fe.reset_index()
- 
-    for col in to_norm:
-        min_val = fe[col].min()
-        max_val = fe[col].max()
-        if max_val > min_val:
-            fe[col] = (fe[col] - min_val) / (max_val - min_val)
-        else:
-            fe[col] = 0.0
     return fe
 
 
@@ -368,6 +349,38 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
             else:
                 break
     return r
+
+def relevant_words(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
+    """
+    ---
+    """
+    skip_prefixes = (
+                "List of", "Outline of", "Index of", "History of",
+                "Category:", "Template:", "User:", "Help:", "Portal:"
+            )
+    wd_params = params = {
+        "action": "query",
+        "titles": "|".join(queries),
+        "format": "json",
+        "prop": "info"  # oppure quello che ti serve (langlinks, extracts, ecc.)
+    }
+
+    r = conn.get_wikipedia(queries.to_list(), wd_params)
+   
+
+    fe = {}
+    print(r)
+    for qid, data in r["entities"].items():
+        words = []
+        if "enwiki" in data.get("sitelinks", {}):
+            title = data["sitelinks"]["enwiki"]["title"]
+            if any(title.startswith(prefix) for prefix in skip_prefixes):
+                continue
+            words.append(title)
+        
+        fe[qid] = words
+    
+    return fe
 
 
 ###################
@@ -440,14 +453,14 @@ if __name__ == '__main__':
    
     conn = Wiki_high_conn()
 
-    ref = count_references(df['wiki_name'], conn)
+    #ref = count_references(df['wiki_name'], conn)
 
-    df['ref'] = df['wiki_name'].map(ref).fillna(0)
-    dom = dominant_langs(df['qid'], conn)
-    print(dom)
-    df['lang'] = df['qid'].map(dom).fillna(0)
-    g = G_factor(df['wiki_name'], df['qid'], 10, 50, 50, 300, 1)
+    #df['ref'] = df['wiki_name'].map(ref).fillna(0)
+    #dom = dominant_langs(df['qid'], conn)
+    #print(dom)
+    #df['lang'] = df['qid'].map(dom).fillna(0)
+    #g = G_factor(df['wiki_name'], df['qid'], 10, 50, 50, 300, 1)
     #c = back_links(df['wiki_name'], conn)
-    dis = is_disambiguation(df['wiki_name'], conn)
-    print(num_mod(df['wiki_name'], conn))
-    
+    #dis = is_disambiguation(df['wiki_name'], conn)
+    #print(num_mod(df['wiki_name'], conn))
+    print(relevant_words(df['wiki_name'], conn))

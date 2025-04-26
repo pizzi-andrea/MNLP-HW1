@@ -63,10 +63,10 @@ class CU_Dataset_Factory:
         self.out_dir = PosixPath(out_dir)
         self.conn = Wiki_high_conn()
         self.label_e = LabelEncoder()
-        self.sgf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_avg", 
-                    "G_num_components", "G_largest_component_size",
-                    "G_largest_component_ratio", "G_avg_component_size",
-                    "G_isolated_nodes", "G_density"}                    # features about wikipedia network
+        self.sgf = {
+        'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg',
+        'G_num_components', 'G_largest_component_size','G_density'
+        }                   # features about wikipedia network
         self.pgf = {'languages', 'reference', 'ambiguos'}               # features about page
         self.pef = {'n_mod', 'n_visits'}                                # features about users
         self.id = {'qid', 'wiki_name'}                                  # identification fields
@@ -122,10 +122,14 @@ class CU_Dataset_Factory:
             if feature == 'G':
                 for c in self.sgf:
                         prc_result.insert(0, c, None)
-            else:
-                prc_result.insert(0, feature, None)
-
-            if feature in dataset.columns.tolist():
+                exstra.append('G')
+                continue
+            
+              
+            
+            
+            prc_result.insert(0, feature, None) # add empty column  
+            if feature in dataset.columns.tolist(): # iterate over enabled features
                 if encode and not(feature in self.id) and (dataset[feature].dtype == pd.StringDtype() or dataset[feature].dtype == object):
                         dummies = pd.get_dummies(dataset[feature], dtype=pd.Int32Dtype(), prefix=feature)
                         prc_result = prc_result.drop(feature, axis=1)
@@ -170,15 +174,21 @@ class CU_Dataset_Factory:
                 # G_FACTOR
                 elif feature == "G":
                     join_fe = 'wiki_name'
-                    # mask = list(self.sgf)
-                    r = G_factor(batch[join_fe], batch['qid'], 10, 10, 20, None, threads=1)
-                    prc_result = pd.merge(prc_result, r, on="wiki_name", how="inner")
-                    print(prc_result)
+                    mask = list(self.sgf)
+                    r = G_factor(batch[join_fe], batch['qid'], 3, 5, 500, None, threads=16)
+                    
+                    for c in mask:
+                   
+                        d = r.set_index(join_fe)[c].to_dict()
+                        delta = prc_result[join_fe].map(d).fillna(0)
+                        prc_result.loc[:, c] = prc_result[c].add(delta, fill_value=0)
                     continue
+
+
 
                 # NUM_MOD
                 elif feature == "n_mod": # count the mean number of edits in a specific time interval
-                    join_fe = 'wiki_name' 
+                    join_fe = 'wiki_name'
                     r = num_mod(batch[join_fe], self.conn)
 
                 # NUM_VISITS
@@ -189,7 +199,7 @@ class CU_Dataset_Factory:
                 # IS_DISAMBIGUATION
                 elif feature == "ambiguos":
                     join_fe = 'qid'
-                    batch = is_disambiguation(batch[join_fe], self.conn)
+                    r = is_disambiguation(batch[join_fe], self.conn)
 
                 # NUM_LANGS
                 elif feature == "num_langs":
@@ -200,13 +210,14 @@ class CU_Dataset_Factory:
                 elif feature == "back_links":
                     join_fe = 'wiki_name'
                     r = back_links(batch[join_fe], self.conn)
-
                 else:
                     raise ValueError(f"Label:{feature} not valid")
-              
+
+
                 delta = prc_result[join_fe].map(r).fillna(0)
-                prc_result.loc[:, feature] = prc_result[feature].add(delta, fill_value=0)
-                
+                prc_result.loc[:, feature] = prc_result[feature].astype('float64').add(delta, fill_value=0)
+            
+            # use for debug prc_result.to_csv('tmp.csv')
             t.update(original_batch_len)
 
         t.close()
