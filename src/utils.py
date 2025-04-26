@@ -130,25 +130,25 @@ def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_work
         # futures: mapping from Future to (node, depth)
         futures = {}
         
-        # Continues until c'è qualcosa da inviare o da attendere
+        # Continues until there's something to send or to await
         while queue or futures:
-            # Pump: sottometti fino a max_workers task
+            # Pump: submit until max_workers task
             while queue and len(futures) < max_workers:
                 node, depth = queue.popleft()
                 
-                # Controllo runtime
+                # Runtime control
                 if max_runtime and (time.time() - start_time) > max_runtime:
                     queue.clear()
                     break
                 
-                # Sottometti il parsing di `node`
+                # Submit parsing of `node`
                 future = executor.submit(parse_wikipedia_links, node, session, limit)
                 futures[future] = (node, depth)
             
             if not futures:
-                break  # niente in corso e nulla in coda
+                break  # nothing to do: all tasks are done
             
-            # Drain: processa il primo task completato
+            # Drain: processes first completed task
             done, _ = next(as_completed(futures), (None, None)), None
             future = done if isinstance(done, type(next(iter(futures)))) else done[0]
             base, depth = futures.pop(future)
@@ -159,7 +159,7 @@ def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_work
                 print(f"Errore sul nodo {base}: {e}")
                 continue
             
-            # Aggiorna grafo e popola la coda per il livello successivo
+            # Updates graph and populates queue for upcoming level
             for link in links:
                 if not G.has_node(link):
                     G.add_node(link, count=1)
@@ -549,8 +549,8 @@ if __name__ == "__main__":
     G = nx.DiGraph()
     start_page = "Q2"
     conn = Wiki_high_conn()
-    limit = 10      # Numero massimo di link per pagina
-    max_depth = 10    # Profondità massima
+    limit = 10      # Max number of links per page
+    max_depth = 10    # Max depth
     G = BFS2_Links_Parallel(start_page, limit=5, max_depth=50, max_nodes=100, max_concurrent=1)
 
     print("G parameter:", G)

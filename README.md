@@ -32,4 +32,4 @@ We want to use two different methods:
 
 
 ### Wandb
-- TODO...
+- [Wandb project link](https://wandb.ai/pizzi-1995517-sapienza-universit-di-roma)
