@@ -225,6 +225,10 @@ class CU_Dataset_Factory:
                 elif feature == 'intro':
                     join_fe = 'wiki_name'
                     r = page_intros(batch[join_fe], self.conn)
+                elif feature == 'full_page':
+                    join_fe = 'wiki_name'
+                    r = page_full(batch[join_fe], self.conn)
+                    
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
@@ -266,7 +270,7 @@ class CU_Dataset_Factory:
 
         Args:
 
-        
+
             
         """
 
@@ -292,7 +296,7 @@ if __name__ == '__main__':
     l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", 'validation', None)
     d = CU_Dataset_Factory(out_dir='.')
     #print(d.validation.head(10))
-    frame = d.produce(l, 'validation_test.tsv', batch_s=32, enable_feature=['intro'], targe_feature='label')
+    frame = d.produce(l, 'validation_test.tsv', batch_s=32, enable_feature=['full_page'], targe_feature='label')
     print(frame.head(5))
     d = pd.read_csv('validation_test.tsv', sep='\t')
     print(d.columns)

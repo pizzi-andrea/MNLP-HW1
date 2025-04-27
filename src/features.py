@@ -1,11 +1,11 @@
-from urllib.parse import quote
+from bs4 import BeautifulSoup
 import pandas as pd
 import networkx as nx
 import nltk
 import numpy as np
 import requests
 from Connection import Wiki_high_conn
-from utils import extract_entity_name, BFS2_Links_Parallel, fetch_and_parse
+from utils import extract_entity_name, BFS2_Links_Parallel
 
 
 #################
@@ -354,34 +354,97 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
 # Features for Transformers models #
 ####################################
 
-def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
+def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> Dict[str, str]:
     """
-    Feature extractor: Given a batch of Wikipedia page titles, returns the intro extract for each page.
+    Feature extractor: Given a batch of Wikipedia page titles, returns the intro extract for each page,
+    handling API pagination via 'continue'.
 
     Args:
         queries (pd.Series): List of Wikipedia page titles.
         conn (Wiki_high_conn): An active Wiki_high_conn instance.
 
     Returns:
-        dict[str, str]: A dictionary mapping each Wikipedia page title to its introductory extract (plain text).
+        Dict[str, str]: A dictionary mapping each Wikipedia page title to its introductory extract (plain text).
     """
-    
-    # Parametri per ottenere l'estratto introduttivo in testo semplice
-    base_params = {
+    titles = queries.to_list()
+    params = {
         "action": "query",
         "format": "json",
         "prop": "extracts",
-        "exintro": True,      # solo la parte introduttiva
-        "explaintext": True,  # senza markup HTML/Wiki
+        "exintro": True,       # only the introductory part
+        "explaintext": True,   # plain text (no HTML/Wiki markup)
+        "exlimit": "max",    # maximum extracts per request
     }
-    data = conn.get_wikipedia(queries.to_list(), base_params)
-    pages = data.get("query", {}).get("pages", {})
-    r = {}
-    for page in pages.values():
-        title = page.get("title", "")
-        r[title] = page.get("extract", "")
 
-    return r
+    # Initialize result dict with empty strings
+    results = {title: "" for title in titles}
+
+    # Loop until API pagination is complete
+    while True:
+        data = conn.get_wikipedia(titles, params)
+        pages = data.get("query", {}).get("pages", {})
+
+        # Accumulate extracts for each page
+        for page in pages.values():
+            title = page.get("title", "")
+            if "missing" in page:
+                # Page does not exist; leave empty
+                continue
+            extract = page.get("extract", "")
+            # Concatenate new fragment
+            results[title] += extract
+
+        # Check for continuation token
+        cont = data.get("continue")
+        if cont:
+            params.update(cont)
+        else:
+            break
+
+    return results
+
+
+
+
+
+def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
+    """
+    Estrae in plain-text tutte le pagine Wikipedia indicate in 'queries',
+    gestendo automaticamente i blocchi 'continue' dell'API.
+    """
+    # Unisci tutti i titoli in un'unica stringa separata da "|"
+ 
+    
+    params = {
+        "action": "query",
+        "format": "json",
+        "prop": "extracts",
+        "explaintext": True,
+    }
+    results: dict[str, str] = {}
+    
+    while True:
+        data = conn.get_wikipedia(queries.to_list(), params)
+        pages = data.get("query", {}).get("pages", {})
+        
+        for page in pages.values():
+            title = page.get("title", "")
+            if "missing" in page:
+                # pagina non trovata
+                results[title] = ""
+            else:
+                # il campo 'extract' è già plain-text
+                results[title] =  results.get(title, '') + page.get("extract", "")
+        
+        # se l'API segnala un 'continue', aggiorno i params e rifaccio la richiesta
+        cont = data.get("continue")
+        if cont:
+            params.update(cont)
+        else:
+            break
+    
+    return results
+
 def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
     """
     For each query, return the list of linked page titles,
