@@ -14,14 +14,15 @@ The task is to develop an automatic classifier, that classifies items using our 
 
 We want to use two different methods:
 
-- LM-based method
-- not LM-based
+- LM-based method (Sklearn-kit framework)
+- Transformers-based (Transformers with Pytorch)
 
 
 ## Project Links
 
 - [Report](https://www.overleaf.com/read/crtcwgxzjskr#7213b2)
 - [Drive Link](https://drive.google.com/drive/folders/15BuiMHZUc6q7Se1iYaa_47AGG2zlvDK4?usp=drive_link)
+- [Colob Notebook](https://colab.research.google.com/drive/1k5HYJD7RdgGT5s9lEYRQS0HgOYVRwXv4?usp=sharing)
 
 ## Useful links
 
@@ -30,6 +31,9 @@ We want to use two different methods:
 - [cultural_dataset (Hugging Face link)](https://huggingface.co/datasets/sapienzanlp/nlp2025_hw1_cultural_dataset)
 - [Login in Huggin Face (CLI)](https://huggingface.co/docs/huggingface_hub/en/guides/cli)
 
+### Hugging-Face Transformers
+- [Transformers](https://huggingface.co/docs/transformers/en/index)
+- -[Pytorch based](https://huggingface.co/models?library=pytorch)
 
 ### Wandb
 - [Wandb project link](https://wandb.ai/pizzi-1995517-sapienza-universit-di-roma)
