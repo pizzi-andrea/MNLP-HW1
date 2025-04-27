@@ -13,13 +13,15 @@ from pathlib import PosixPath
 
 
 class Hf_Loader(Loader):
+    """Dataset Loader from Hugging-Face Hub"""
     def __init__(self, hf_url:str, split:str|NamedSplit, limit:int|None = None) -> None:
         super().__init__()
         self.hf_url = hf_url
         self.split = split
         self.limit = limit
         self.hf_cache = './hugging_dataset/'
-   
+
+    """Download dataset from Hugging-Face Hub and return it"""
     def get(self) -> pd.DataFrame:
         df:pd.DataFrame = load_dataset(self.hf_url, cache_dir=self.hf_cache, split=self.split).to_pandas() # type: ignore
         if self.limit:
@@ -29,6 +31,7 @@ class Hf_Loader(Loader):
         
 
 class Local_Loader(Loader):
+    """Dataset Loader for local dataset"""
     def __init__(self, file_path:str|PosixPath, limit:int|None = None) -> None:
         super().__init__()
         self.file_path = PosixPath(file_path)
@@ -36,6 +39,7 @@ class Local_Loader(Loader):
        
    
     def get(self) -> pd.DataFrame:
+        """read data from `file_path` and return it"""
         df = None
         if self.file_path.suffix == 'tsv':
             df  = pd.read_csv(self.file_path, sep='\t')
@@ -62,6 +66,11 @@ class CU_Dataset_Factory:
         self.out_dir = PosixPath(out_dir)
         self.conn = Wiki_high_conn()
         self.label_e = LabelEncoder()
+
+        #################
+        # Know features #
+        #################
+
         self.sgf = {
         'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg',
         'G_num_components', 'G_largest_component_size','G_density'
@@ -71,10 +80,6 @@ class CU_Dataset_Factory:
         self.id = {'qid', 'wiki_name'}                                  # identification fields
         self.tf = {'relevant_words', 'intro'}
         pd.set_option("mode.chained_assignment", None)
-       
-        #self.train: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["train"].to_pandas()  # type: ignore
-        #self.validation: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["validation"].to_pandas()  # type: ignore
-
 
     def __wiki_name(self, qids: list[str]) -> dict[str, str]:
         conn = Wiki_high_conn()
@@ -124,10 +129,7 @@ class CU_Dataset_Factory:
                         prc_result.insert(0, c, None)
                 exstra.append('G')
                 continue
-            
-              
-            
-            
+
             prc_result.insert(0, feature, None) # add empty column  
             if feature in dataset.columns.tolist(): # iterate over enabled features
                 if encode and not(feature in self.id) and (dataset[feature].dtype == pd.StringDtype() or dataset[feature].dtype == object):
@@ -151,6 +153,10 @@ class CU_Dataset_Factory:
             batch_cc += 1
             t.set_postfix({"batch": batch_cc})
             original_batch_len = len(batch)
+
+            ################################
+            # exstract additional features #
+            ################################
 
             for feature in exstra:
                 
@@ -197,9 +203,9 @@ class CU_Dataset_Factory:
                 #     r = num_users(batch[join_fe], self.conn) 
 
                 # IS_DISAMBIGUATION
-                elif feature == "ambiguos":
-                    join_fe = 'qid'
-                    r = is_disambiguation(batch[join_fe], self.conn)
+                #elif feature == "ambiguos":
+                #    join_fe = 'qid'
+                #    r = is_disambiguation(batch[join_fe], self.conn)
 
                 # NUM_LANGS
                 elif feature == "num_langs":
@@ -211,15 +217,20 @@ class CU_Dataset_Factory:
                     join_fe = 'wiki_name'
                     r = back_links(batch[join_fe], self.conn)
                 
+                # RELEVANT_WORDS
                 elif feature == "relevant_words":
                     join_fe = 'wiki_name'
                     r = relevant_words(batch[join_fe], self.conn)
+                # PAGE_INTRO
                 elif feature == 'intro':
                     join_fe = 'wiki_name'
                     r = page_intros(batch[join_fe], self.conn)
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
+                ################
+                # add features #
+                ################
                 delta = prc_result[join_fe].map(r)
                 
                 if delta.dtype == object:
@@ -245,7 +256,6 @@ class CU_Dataset_Factory:
             
             #prc_result.to_csv('tmp.csv')
             t.update(original_batch_len)
-
         t.close()
         return prc_result
 
@@ -253,6 +263,11 @@ class CU_Dataset_Factory:
     def produce(self, loader:Loader, out_file: path.PosixPath|str, enable_feature:list[str], targe_feature:str, batch_s:int = 1, encoding: bool = False) -> pd.DataFrame|None:
         """
         Transforms Cultural dataset in new dataset with additional features or with a subset of features
+
+        Args:
+
+        
+            
         """
 
         out_file = PosixPath(out_file)

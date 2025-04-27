@@ -1,7 +1,5 @@
 from CU_Dataset_Factory import CU_Dataset_Factory
 from CU_Dataset_Factory import Hf_Loader
-from pathlib import PosixPath
-
 
 if __name__ == '__main__':
     print('Cultural Dataset argumentation start')
