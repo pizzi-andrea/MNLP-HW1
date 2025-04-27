@@ -350,37 +350,87 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
                 break
     return r
 
-def relevant_words(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
+####################################
+# Features for Transformers models #
+####################################
+
+def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     """
-    ---
+    Feature extractor: Given a batch of Wikipedia page titles, returns the intro extract for each page.
+
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+
+    Returns:
+        dict[str, str]: A dictionary mapping each Wikipedia page title to its introductory extract (plain text).
+    """
+    
+    # Parametri per ottenere l'estratto introduttivo in testo semplice
+    base_params = {
+        "action": "query",
+        "format": "json",
+        "prop": "extracts",
+        "exintro": True,      # solo la parte introduttiva
+        "explaintext": True,  # senza markup HTML/Wiki
+    }
+    data = conn.get_wikipedia(queries.to_list(), base_params)
+    pages = data.get("query", {}).get("pages", {})
+    r = {}
+    for page in pages.values():
+        title = page.get("title", "")
+        r[title] = page.get("extract", "")
+
+    return r
+def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
+    """
+    For each query, return the list of linked page titles,
+    skipping links with bad prefixes.
     """
     skip_prefixes = (
-                "List of", "Outline of", "Index of", "History of",
-                "Category:", "Template:", "User:", "Help:", "Portal:"
-            )
-    wd_params = params = {
+        "List of", "Outline of", "Index of", "History of",
+        "Category:", "Template:", "User:", "Help:", "Portal:", "Module:", "Wikipedia:", ":" 
+    )
+
+    page_links = {}
+
+    wd_params = {
         "action": "query",
-        "titles": "|".join(queries),
         "format": "json",
-        "prop": "info"  # oppure quello che ti serve (langlinks, extracts, ecc.)
+        "prop": "links",
+        "pllimit": "max"  # get max links per request
     }
 
-    r = conn.get_wikipedia(queries.to_list(), wd_params)
-   
+    titles = queries.to_list()
+    r = conn.get_wikipedia(titles, wd_params)
 
-    fe = {}
-    print(r)
-    for qid, data in r["entities"].items():
-        words = []
-        if "enwiki" in data.get("sitelinks", {}):
-            title = data["sitelinks"]["enwiki"]["title"]
-            if any(title.startswith(prefix) for prefix in skip_prefixes):
-                continue
-            words.append(title)
-        
-        fe[qid] = words
-    
-    return fe
+    while True:
+        pages = r.get("query", {}).get("pages", {})
+        for _, data in pages.items():
+            page_title = data.get("title", "UNKNOWN_PAGE")
+            links = data.get("links", [])
+            valid_links = []
+            for link in links:
+                linked_title = link["title"]
+                if any(linked_title.startswith(prefix) for prefix in skip_prefixes):
+                    continue
+                valid_links.append(linked_title)
+            
+            if page_title not in page_links:
+                page_links[page_title] = []
+            page_links[page_title].extend(valid_links)
+
+        if 'continue' in r:
+            wd_params.update(r['continue'])
+            r = conn.get_wikipedia(titles, wd_params)
+        else:
+            r = {}
+            for k, v in page_links.items():
+                r[k] = ','.join(v)
+
+            break
+
+    return r
 
 
 ###################
@@ -463,4 +513,5 @@ if __name__ == '__main__':
     #c = back_links(df['wiki_name'], conn)
     #dis = is_disambiguation(df['wiki_name'], conn)
     #print(num_mod(df['wiki_name'], conn))
-    print(relevant_words(df['wiki_name'], conn))
+    #print(relevant_words(df['wiki_name'], conn))
+    print(page_intros(df['wiki_name'], conn))

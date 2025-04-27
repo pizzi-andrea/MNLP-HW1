@@ -2,7 +2,6 @@ import pandas as pd
 import pathlib as path
 from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
-from requests import get
 from datasets import load_dataset
 from utils import batch_generator
 from features import *
@@ -70,6 +69,7 @@ class CU_Dataset_Factory:
         self.pgf = {'languages', 'reference', 'ambiguos'}               # features about page
         self.pef = {'n_mod', 'n_visits'}                                # features about users
         self.id = {'qid', 'wiki_name'}                                  # identification fields
+        self.tf = {'relevant_words', 'intro'}
         pd.set_option("mode.chained_assignment", None)
        
         #self.train: pd.DataFrame = load_dataset("sapienzanlp/nlp2025_hw1_cultural_dataset", cache_dir="dataset")["train"].to_pandas()  # type: ignore
@@ -210,14 +210,40 @@ class CU_Dataset_Factory:
                 elif feature == "back_links":
                     join_fe = 'wiki_name'
                     r = back_links(batch[join_fe], self.conn)
+                
+                elif feature == "relevant_words":
+                    join_fe = 'wiki_name'
+                    r = relevant_words(batch[join_fe], self.conn)
+                elif feature == 'intro':
+                    join_fe = 'wiki_name'
+                    r = page_intros(batch[join_fe], self.conn)
                 else:
                     raise ValueError(f"Label:{feature} not valid")
 
+                delta = prc_result[join_fe].map(r)
+                
+                if delta.dtype == object:
+                    old = '0'
+                    fill = ''
+                    ty = str
+                  
+                else:
+                    old = 0
+                    ty = float
+                    fill = 0
+        
+                prc_result[feature] = prc_result[feature].astype(ty).replace(old, fill)
+                delta = delta.fillna(fill)
+                
+                new_feature = (
+                    prc_result[feature].replace(old, fill).astype(ty).add(delta)
+                    if ty == float else
+                    prc_result[feature].astype(ty).replace(old, fill) + delta
+                )
 
-                delta = prc_result[join_fe].map(r).fillna(0)
-                prc_result.loc[:, feature] = prc_result[feature].astype('float64').add(delta, fill_value=0)
+                prc_result.loc[:, feature] = new_feature
             
-            # use for debug prc_result.to_csv('tmp.csv')
+            #prc_result.to_csv('tmp.csv')
             t.update(original_batch_len)
 
         t.close()
@@ -251,4 +277,7 @@ if __name__ == '__main__':
     l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", 'validation', None)
     d = CU_Dataset_Factory(out_dir='.')
     #print(d.validation.head(10))
-    d.produce(l, 'validation.tsv', batch_s=10, enable_feature=['label', 'wiki_name', 'qid', 'languages', 'reference', 'ambiguos'], targe_feature='label', train=False)
+    frame = d.produce(l, 'validation_test.tsv', batch_s=32, enable_feature=['intro'], targe_feature='label')
+    print(frame.head(5))
+    d = pd.read_csv('validation_test.tsv', sep='\t')
+    print(d.columns)
