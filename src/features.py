@@ -1,4 +1,3 @@
-from bs4 import BeautifulSoup
 import pandas as pd
 import networkx as nx
 import nltk
@@ -187,7 +186,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
 
     # For each page, fetch extracts in the available languages
     pages = {}
-
+    
     for page, links in out.items():
         for l, link in links:
             
@@ -206,7 +205,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
         total_words = 0
         valid_pages = 0
         # For each page written in a different language, count words
-        for page_id in pages.keys():
+        for page_id, _ in pages.items():
             extract = pages[page_id].get('extract', '')
             if extract:
                 word_count = len(nltk.word_tokenize(extract))
@@ -253,10 +252,11 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
     ]
 
     fe = {}
-    r = {}
+    
 
     # Compute raw metrics per query
     for q, qid in zip(titles, qids):
+        r = {}
         for col in raw_cols:
             r[col] = 0.0
 
@@ -301,9 +301,6 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         r['G_largest_component_size'] = largest_component_size
         r['G_density'] = density
         fe[q] = r.copy()
-    
-    # Normalize selected metrics  
-  
 
     fe = pd.DataFrame(fe).transpose()
     fe = fe.reset_index().rename({'index':'wiki_name'}, axis=1)
@@ -328,7 +325,7 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
     # The API may have rate limits, so we use a delay between requests if processing a large number of titles
     
     # Obtain Wikipedia's titles from Wikidata's entities
-    r = {} 
+    r = {}
     for title in queries:
         r[title] = 0
         PARAMS = {
@@ -354,7 +351,7 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
 # Features for Transformers models #
 ####################################
 
-def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> Dict[str, str]:
+def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     """
     Feature extractor: Given a batch of Wikipedia page titles, returns the intro extract for each page,
     handling API pagination via 'continue'.

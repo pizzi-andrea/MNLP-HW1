@@ -78,7 +78,7 @@ class CU_Dataset_Factory:
         self.pgf = {'languages', 'reference', 'ambiguos'}               # features about page
         self.pef = {'n_mod', 'n_visits'}                                # features about users
         self.id = {'qid', 'wiki_name'}                                  # identification fields
-        self.tf = {'relevant_words', 'intro'}
+        self.tf = {'relevant_words', 'intro', 'full_page'}
         pd.set_option("mode.chained_assignment", None)
 
     def __wiki_name(self, qids: list[str]) -> dict[str, str]:
@@ -142,8 +142,8 @@ class CU_Dataset_Factory:
                 exstra.append(feature)
                 prc_result[feature] = 0
             
-            
-            prc_result[targe_feature] = self.label_e.fit_transform(dataset[targe_feature])
+            if targe_feature:
+                prc_result[targe_feature] = self.label_e.fit_transform(dataset[targe_feature])
             exstra.sort()
 
         # Batch elaboration
