@@ -7,8 +7,8 @@ if __name__ == '__main__':
     train_l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", 'train')
     validation_l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", 'validation')
 
-    factory.produce(train_l, 'train.tsv', ['category', 'subcategory','type','languages','reference','num_langs', 'G', 'n_mod', 'back_links'], 'label', 10, False)
-    factory.produce(validation_l, 'validation.tsv', ['category', 'subcategory','type','languages','reference','num_langs', 'G', 'n_mod', 'back_links'], 'label', 10, False)
+    factory.produce(train_l, 'train.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'G'], 'label', 10, False)
+    factory.produce(validation_l, 'validation.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'G'], 'label', 10, False)
     print('End process')
     exit(0)
 

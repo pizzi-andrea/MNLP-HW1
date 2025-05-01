@@ -55,8 +55,11 @@ def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list
         "ellimit": "max",
         "format": "json"
     }
-    
-    data = conn.get_wikipedia(queries.to_list(), params=params)
+    try:
+        data = conn.get_wikipedia(queries.to_list(), params=params)
+    except requests.HTTPError as err:
+        print(err)
+        return {}
     r = {}
     pages = data.get("query", {}).get("pages", {})
     for page_id, page in pages.items():
@@ -85,12 +88,16 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
    
     result = {}
     dominant = set(['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja'])
-    
-    r = conn.get_wikidata(queries.to_list(), params={
-        "action": "wbgetentities",
-        "props": "sitelinks",
-        "format": "json"
-    })
+    try:
+        r = conn.get_wikidata(queries.to_list(), params={
+            "action": "wbgetentities",
+            "props": "sitelinks",
+            "format": "json"
+        })
+    except requests.HTTPError as err:
+        print(err)
+        return {}
+
     
     result:dict =r.get('entities', {})
 
@@ -119,13 +126,15 @@ def num_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
     """
    
     result = {}
-    
-    r = conn.get_wikidata(queries.to_list(), params={
-        "action": "wbgetentities",
-        "props": "sitelinks",
-        "format": "json"
-    })
-    
+    try:
+        r = conn.get_wikidata(queries.to_list(), params={
+            "action": "wbgetentities",
+            "props": "sitelinks",
+            "format": "json"
+        })
+    except requests.HTTPError as err:
+        print(err)
+        return {}
     result:dict =r.get('entities', {})
 
     r = {}
@@ -297,7 +306,6 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         r['G_nodes'] = G.number_of_nodes()
         r['G_num_cliques'] = raw_cliques
         r['G_avg'] = avg_count
-        r['G_num_components'] = len(components)
         r['G_largest_component_size'] = largest_component_size
         r['G_density'] = density
         fe[q] = r.copy()
@@ -337,7 +345,13 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
             "blnamespace": 0
             }
         while True:
-            data = conn.get_wikipedia(title,PARAMS)
+
+            try:
+                data = conn.get_wikipedia(title,PARAMS)
+            except requests.HTTPError as err:
+                print(err)
+                r[title] = 0
+                break
             links = data.get("query", {}).get("backlinks", [])
             r[title] += len(links)
         
@@ -378,7 +392,11 @@ def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
 
     # Loop until API pagination is complete
     while True:
-        data = conn.get_wikipedia(titles, params)
+        try:
+            data = conn.get_wikipedia(titles, params)
+        except requests.HTTPError as err:
+            print(err)
+
         pages = data.get("query", {}).get("pages", {})
 
         # Accumulate extracts for each page
@@ -401,9 +419,6 @@ def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     return results
 
 
-
-
-
 def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     """
     Estrae in plain-text tutte le pagine Wikipedia indicate in 'queries',
@@ -421,7 +436,13 @@ def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     results: dict[str, str] = {}
     
     while True:
-        data = conn.get_wikipedia(queries.to_list(), params)
+
+        try:
+
+            data = conn.get_wikipedia(queries.to_list(), params)
+        except requests.HTTPError as err:
+            print(err)
+
         pages = data.get("query", {}).get("pages", {})
         
         for page in pages.values():
@@ -536,9 +557,14 @@ def num_mod(queries:pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
 
         while True:
             # Execute the call
-            response = conn.get_wikipedia([title], params)
-            data = response.get("query", {})
-            pages = data.get("pages", {})
+            try:
+                response = conn.get_wikipedia([title], params)
+                data = response.get("query", {})
+                pages = data.get("pages", {})
+            except requests.HTTPError as err:
+                print(err)
+                result[title] = []
+                break
 
             # Gather users from all revisions in this batch
             for page in pages.values():

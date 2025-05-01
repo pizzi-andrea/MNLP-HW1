@@ -217,7 +217,7 @@ class CU_Dataset_Factory:
                     join_fe = "wiki_name"
                     mask = list(self.sgf)
                     r = G_factor(
-                        batch[join_fe], batch["qid"], 3, 5, 500, None, threads=16
+                        batch[join_fe], batch["qid"], 3, 15, 500, None, threads=16
                     )
 
                     for c in mask:
@@ -333,7 +333,7 @@ class CU_Dataset_Factory:
         Transforms Cultural dataset in new argumented version in according to `enable_features[]` list
 
         Args:
-        
+
 
 
 
