@@ -51,8 +51,9 @@ class Wiki_high_conn:
         params["titles"] = "|".join(queries)
 
         response = self.session.get(url, params=params)
-        data = response.json()
         response.raise_for_status()
+        data = response.json()
+        
 
         return data
 
@@ -73,12 +74,12 @@ class Wiki_high_conn:
 
         params["format"] = "json"
         params["ids"] = "|".join(queries)
-        try:
-            response = self.session.get(url, params=params)
-            data = response.json()
-            response.raise_for_status()
-        except requests.HTTPError as err:
-            raise err
+     
+        response = self.session.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+            
+       
 
         return data
 

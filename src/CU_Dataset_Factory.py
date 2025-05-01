@@ -88,7 +88,6 @@ class CU_Dataset_Factory:
             "G_num_cliques",
             "G_avg",
             "G_num_components",
-            "G_largest_component_size",
             "G_density",
         }  # features about wikipedia network
         self.pgf = {"languages", "reference", "ambiguos"}  # features about page
@@ -303,9 +302,9 @@ class CU_Dataset_Factory:
 
     def __save_with_format(self, df: pd.DataFrame, path: PosixPath) -> None:
         if path.suffix == ".csv":
-            df.to_csv(path, sep=".")
+            df.to_csv(path, sep=".", index=False)
         elif path.suffix == ".tsv":
-            df.to_csv(path, sep="\t")
+            df.to_csv(path, sep="\t", index=False)
         else:
             raise ValueError(f"File exstension {path.suffix} not supported")
         return
@@ -318,9 +317,6 @@ class CU_Dataset_Factory:
         else:
             raise ValueError(f"File exstension {path.suffix} not supported")
         
-
-
-
         return df
 
     def produce(
@@ -334,9 +330,10 @@ class CU_Dataset_Factory:
         encoding: bool = False,
     ) -> pd.DataFrame | None:
         """
-        Transforms Cultural dataset in new dataset with additional features or with a subset of features
+        Transforms Cultural dataset in new argumented version in according to `enable_features[]` list
 
         Args:
+        
 
 
 
@@ -354,7 +351,7 @@ class CU_Dataset_Factory:
         dataset["wiki_name"] = (
             dataset["qid"].map(self.__wiki_name(dataset["qid"].to_list())).fillna(0)
         )
-        dataset = dataset.drop(["item", "name"], axis=1)
+        # dataset = dataset.drop(["item", "name"], axis=1)
         # Function that calls back __produce and returns the new dataset
         prc = self.__produce(dataset, enable_feature, targe_feature, batch_s, encoding)
         self.__save_with_format(prc, out_file)
