@@ -1,4 +1,4 @@
-import pathlib as path  # imports for file system access
+import pathlib as path  # Imports for file system access
 from os import mkdir
 from pathlib import PosixPath
 
@@ -64,7 +64,6 @@ class Local_Loader(Loader):
             return df
 
 
-# Class to append the new features to the dataset and produce the new dataset
 class CU_Dataset_Factory:
     """
     Builder Class use to generate train or test dataset with required features
@@ -78,23 +77,19 @@ class CU_Dataset_Factory:
 
         if not self.out_dir.exists():
             mkdir(self.out_dir)
-        #################
-        # Know features #
-        #################
 
-        self.sgf = {
-            "G_mean_pr",
-            "G_nodes",
-            "G_num_cliques",
-            "G_avg",
-            "G_num_components",
-            "G_density",
-        }  # features about wikipedia network
+        ##################
+        # Known features #
+        ##################
+
+        self.sgf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_avg", "G_num_components", 
+                    "G_density", "G_largest_component_size"}  # features about wikipedia network
         self.pgf = {"languages", "reference", "ambiguos"}  # features about page
         self.pef = {"n_mod", "n_visits"}  # features about users
         self.id = {"qid", "wiki_name"}  # identification fields
-        self.tf = {"relevant_words", "intro", "full_page"}
+        self.tf = {"relevant_words", "intro", "full_page"} # features about text for transformers
         pd.set_option("mode.chained_assignment", None)
+
 
     def __wiki_name(self, qids: list[str]) -> dict[str, str]:
         conn = Wiki_high_conn()
@@ -127,17 +122,11 @@ class CU_Dataset_Factory:
             qid_to_title.update(fetch_batch(batch, conn))
         return qid_to_title
 
-    def __produce(
-        self,
-        dataset: pd.DataFrame,
-        enable_feature: list[str],
-        targe_feature: str | None,
-        batch_s: int = 1,
-        encode: bool = True,
-    ) -> pd.DataFrame:
+
+    def __produce(self, dataset: pd.DataFrame, enable_feature: list[str], targe_feature: str | None, batch_s: int = 1, encode: bool = True) -> pd.DataFrame:
 
         prc_result = pd.DataFrame()
-        exstra = []
+        extra = []
 
         for id_c in self.id:
             prc_result.insert(0, id_c, None)
@@ -149,7 +138,7 @@ class CU_Dataset_Factory:
             if feature == "G":
                 for c in self.sgf:
                     prc_result.insert(0, c, None)
-                exstra.append("G")
+                extra.append("G")
                 continue
 
             prc_result.insert(0, feature, None)  # add empty column
@@ -170,30 +159,28 @@ class CU_Dataset_Factory:
                 else:
                     prc_result[feature] = dataset[feature]
             else:
-                exstra.append(feature)
+                extra.append(feature)
                 prc_result[feature] = 0
 
             if targe_feature:
                 prc_result[targe_feature] = self.label_e.fit_transform(
                     dataset[targe_feature]
                 )
-            exstra.sort()
+            extra.sort()
 
         # Batch elaboration
         batch_cc = 0
-        t = tqdm(
-            desc="batch compute", total=len(dataset)
-        )  # uses len(dataset) instead of dataset.size
+        t = tqdm(desc="batch compute", total=len(dataset))  # uses len(dataset) instead of dataset.size
         for batch in batch_generator(dataset, batch_size=batch_s):  # type: ignore
             batch_cc += 1
             t.set_postfix({"batch": batch_cc})
             original_batch_len = len(batch)
 
-            ################################
-            # exstract additional features #
-            ################################
+            ###############################
+            # extract additional features #
+            ###############################
 
-            for feature in exstra:
+            for feature in extra:
 
                 t.set_description(feature, refresh=True)
 
@@ -216,28 +203,23 @@ class CU_Dataset_Factory:
                 elif feature == "G":
                     join_fe = "wiki_name"
                     mask = list(self.sgf)
-                    r = G_factor(
-                        batch[join_fe], batch["qid"], 3, 5, 500, None, threads=16
-                    )
+                    r = G_factor(batch[join_fe], batch["qid"], 3, 5, 500, None, threads=16)
 
                     for c in mask:
-
                         d = r.set_index(join_fe)[c].to_dict()
                         delta = prc_result[join_fe].map(d).fillna(0)
                         prc_result.loc[:, c] = prc_result[c].add(delta, fill_value=0)
                     continue
 
                 # NUM_MOD
-                elif (
-                    feature == "n_mod"
-                ):  # count the mean number of edits in a specific time interval
+                elif feature == "n_mod":
                     join_fe = "wiki_name"
                     r = num_mod(batch[join_fe], self.conn)
 
-                # NUM_VISITS
-                # elif feature == "n_visits": # count the mean number of visits per day in a time interval
-                #     join_fe = 'wiki_name'
-                #     r = num_users(batch[join_fe], self.conn)
+                # NUM_USERS
+                elif feature == "n_visits":
+                    join_fe = 'wiki_name'
+                    r = num_users(batch[join_fe], start_date="20150701", end_date="20240430") # interval of almost 10 years
 
                 # IS_DISAMBIGUATION
                 # elif feature == "ambiguos":
@@ -258,10 +240,13 @@ class CU_Dataset_Factory:
                 elif feature == "relevant_words":
                     join_fe = "wiki_name"
                     r = relevant_words(batch[join_fe], self.conn)
+
                 # PAGE_INTRO
                 elif feature == "intro":
                     join_fe = "wiki_name"
                     r = page_intros(batch[join_fe], self.conn)
+
+                # FULL_PAGE
                 elif feature == "full_page":
                     join_fe = "wiki_name"
                     r = page_full(batch[join_fe], self.conn)
@@ -272,6 +257,7 @@ class CU_Dataset_Factory:
                 ################
                 # add features #
                 ################
+
                 delta = prc_result[join_fe].map(r)
 
                 if delta.dtype == object:
@@ -300,6 +286,7 @@ class CU_Dataset_Factory:
         t.close()
         return prc_result
 
+
     def __save_with_format(self, df: pd.DataFrame, path: PosixPath) -> None:
         if path.suffix == ".csv":
             df.to_csv(path, sep=".", index=False)
@@ -308,6 +295,7 @@ class CU_Dataset_Factory:
         else:
             raise ValueError(f"File exstension {path.suffix} not supported")
         return
+
 
     def __load_with_format(self, path: PosixPath) -> pd.DataFrame:
         if path.suffix == ".csv":
@@ -319,23 +307,21 @@ class CU_Dataset_Factory:
         
         return df
 
-    def produce(
-        self,
-        loader: Loader,
-        out_file: path.PosixPath | str | None,
-        enable_feature: list[str],
-        targe_feature: str | None,
-        batch_s: int = 1,
-        load: bool = False,
-        encoding: bool = False,
-    ) -> pd.DataFrame | None:
+
+    def produce(self, loader: Loader, out_file: path.PosixPath | str | None, 
+                enable_feature: list[str], targe_feature: str | None, batch_s: int = 1,
+                load: bool = False, encoding: bool = False) -> pd.DataFrame | None:
         """
         Transforms Cultural dataset in new argumented version in according to `enable_features[]` list
 
         Args:
-        
-
-
+            loader (Loader): Loader object to load dataset
+            out_file (str | PosixPath | None): output file path
+            enable_feature (list[str]): list of features to be added to the dataset
+            targe_feature (str | None): target feature to be used for training
+            batch_s (int, optional): batch size. Defaults to 1.
+            load (bool, optional): load the dataset from the file. Defaults to False.
+            encoding (bool, optional): encode the categorical features. Defaults to False.
 
         """
 

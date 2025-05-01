@@ -347,9 +347,11 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
                 break
     return r
 
+
 ####################################
 # Features for Transformers models #
 ####################################
+
 
 def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     """
@@ -401,17 +403,13 @@ def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     return results
 
 
-
-
-
 def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     """
-    Estrae in plain-text tutte le pagine Wikipedia indicate in 'queries',
-    gestendo automaticamente i blocchi 'continue' dell'API.
+    Extract plain-text of all Wikipedia pages indicated in 'queries',
+    automatically dealing with 'continue' blocks of the API.
     """
-    # Unisci tutti i titoli in un'unica stringa separata da "|"
- 
-    
+
+    # Join all titles in a single string separated by "|"
     params = {
         "action": "query",
         "format": "json",
@@ -427,13 +425,13 @@ def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
         for page in pages.values():
             title = page.get("title", "")
             if "missing" in page:
-                # pagina non trovata
+                # Page not found
                 results[title] = ""
             else:
-                # il campo 'extract' è già plain-text
+                # The 'extract' field is already plain-text
                 results[title] =  results.get(title, '') + page.get("extract", "")
         
-        # se l'API segnala un 'continue', aggiorno i params e rifaccio la richiesta
+        # If l'API reports a 'continue', updates params and resend the request
         cont = data.get("continue")
         if cont:
             params.update(cont)
@@ -442,11 +440,13 @@ def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     
     return results
 
+
 def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
     """
     For each query, return the list of linked page titles,
     skipping links with bad prefixes.
     """
+
     skip_prefixes = (
         "List of", "Outline of", "Index of", "History of",
         "Category:", "Template:", "User:", "Help:", "Portal:", "Module:", "Wikipedia:", ":" 
@@ -498,12 +498,38 @@ def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
 ###################
 
 
-# Number of users who visited a page
-def num_users(queries: pd.Series) -> dict[str, int]:
-    return {}
+def num_users(queries: pd.Series, start_date: str, end_date: str) -> dict[str, int]:
+    """
+    Feature extractor: Given a batch of Wikipedia page titles, returns the number of unique users 
+    who have visited each page in a specific interval of time.
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        start_date (str): Start date in YYYYMMDD format.
+        end_date (str): End date in YYYYMMDD format.
+    Returns:
+        dict[str, int]: A dictionary mapping Wikipedia page titles to their unique user visit counts.
+    """
+
+    endpoint = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/{}/daily/{}/{}"
+    result = {}
+    headers = {'User-Agent': 'WikipediaViewsBot/1.0 (dani@gmail.com)'}
+
+    for title in queries.tolist():
+        title_formatted = title.strip().replace(' ', '_')
+        title_encoded = requests.utils.quote(title_formatted, safe='')
+        url = endpoint.format(title_encoded, start_date, end_date)
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            views = sum(item['views'] for item in data.get('items', []))
+            result[title] = views
+        else:
+            result[title] = 0  # if there's an error, return 0 visits
+
+    return result
 
 
-# Number of edits of a page
 def num_mod(queries:pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
     """
     Feature extractor: Given a batch of Wikipedia page titles, returns the number of unique users who have edited each page.
@@ -559,7 +585,7 @@ def num_mod(queries:pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
     
 
 if __name__ == '__main__':
-    df = pd.DataFrame({'wiki_name':['Rome', 'London', 'A', 'python'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
+    df = pd.DataFrame({'wiki_name':['Rome', 'London', 'A', 'Python (programming language)'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
    
     conn = Wiki_high_conn()
 
@@ -574,4 +600,5 @@ if __name__ == '__main__':
     #dis = is_disambiguation(df['wiki_name'], conn)
     #print(num_mod(df['wiki_name'], conn))
     #print(relevant_words(df['wiki_name'], conn))
-    print(page_intros(df['wiki_name'], conn))
+    #print(page_intros(df['wiki_name'], conn))
+    print(num_users(df['wiki_name'], start_date="20150701", end_date="20250430"))
