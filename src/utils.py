@@ -1,17 +1,12 @@
 import asyncio
-import time
 import aiohttp
-import requests
 import networkx as nx
 import pandas as pd
-import requests
+import matplotlib
 from matplotlib import pyplot as plt
 from collections import deque
-from bs4 import BeautifulSoup
 from Connection import Wiki_high_conn
 from collections import deque
-from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from lxml import html
 from urllib.parse import quote, unquote
 
@@ -58,240 +53,6 @@ def extract_entity_name(url:pd.Series) -> list[str]:
     """
 
     return [l.strip().split("/")[-1].replace("_", " ") for l in url]
-
-
-def __parse_wikipedia_links(title, session, limit):
-    encoded_title = title.replace(" ", "_")
-    url = "https://en.wikipedia.org/w/api.php"
-    params = {
-        "action": "parse",
-        "page": encoded_title,
-        "prop": "text",
-        "format": "json"
-    }
-
-    try:
-        response = session.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        if "parse" not in data or "text" not in data["parse"] or "*" not in data["parse"]["text"]:
-            return title, []
-
-        html = data["parse"]["text"]["*"]
-        soup = BeautifulSoup(html, "lxml")
-        content_div = soup.find("div", class_="mw-parser-output")
-
-        links = []
-        seen = set()
-        if content_div:
-            for a in content_div.find_all("a", href=True):
-                href = a["href"]
-                if href.startswith("/wiki/") and ":" not in href and "#" not in href:
-                    title_link = a.get("title")
-                    if title_link and title_link not in seen:
-                        links.append(title_link)
-                        seen.add(title_link)
-
-        links.sort()
-        return title, links[:limit]
-    except Exception:
-        return title, []
-
-
-def parse_wikipedia_links(node, session, limit):
-    """
-    Calls parse_wikipedia_links(node, session, limit).  
-    On ANY exception (network error, JSON error, None return), returns (node, []).
-    """
-
-    try:
-        result = __parse_wikipedia_links(node, session, limit)
-        # guard against somebody returning None
-        if not (isinstance(result, tuple) and len(result) == 2):
-            raise ValueError(f"Unexpected return from parse_wikipedia_links: {result!r}")
-        return result
-    except Exception as e:
-        print(f"⚠️ parse failed for {node}: {e!r}")
-        # return an empty list of links so we can continue
-        return node, []
-
-# USELESS
-def BFS_Links_Parallel(start_title, limit, max_depth, max_runtime=None, max_workers=16):
-    G = nx.DiGraph()
-    G.add_node(start_title, count=1)
-    
-    visited = {start_title}
-    queue = deque([(start_title, 0)])
-    session = requests.Session()
-    start_time = time.time()
-    
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # futures: mapping from Future to (node, depth)
-        futures = {}
-        
-        # Continues until there's something to send or to await
-        while queue or futures:
-            # Pump: submit until max_workers task
-            while queue and len(futures) < max_workers:
-                node, depth = queue.popleft()
-                
-                # Runtime control
-                if max_runtime and (time.time() - start_time) > max_runtime:
-                    queue.clear()
-                    break
-                
-                # Submit parsing of `node`
-                future = executor.submit(parse_wikipedia_links, node, session, limit)
-                futures[future] = (node, depth)
-            
-            if not futures:
-                break  # nothing to do: all tasks are done
-            
-            # Drain: processes first completed task
-            done, _ = next(as_completed(futures), (None, None)), None
-            future = done if isinstance(done, type(next(iter(futures)))) else done[0]
-            base, depth = futures.pop(future)
-            
-            try:
-                base_title, links = future.result()
-            except Exception as e:
-                print(f"Errore sul nodo {base}: {e}")
-                continue
-            
-            # Updates graph and populates queue for upcoming level
-            for link in links:
-                if not G.has_node(link):
-                    G.add_node(link, count=1)
-                else:
-                    G.nodes[link]['count'] += 1
-                
-                if not G.has_edge(base_title, link):
-                    G.add_edge(base_title, link)
-                
-                if depth + 1 <= max_depth and link not in visited:
-                    visited.add(link)
-                    queue.append((link, depth + 1))
-                
-                if link in visited:
-                    for n in G.neighbors(link):
-                        G.nodes[n]['count'] +=1
-    
-    return G
-
-# USELESS
-def BFS_Links(title: str, limit: int, max_depth: int, max_runtime: float = None) -> nx.DiGraph:
-    """
-    Executes a BFS search on Wikipedia links, starting from the given title.
-    
-    Optimizations:
-      - Utilizes a queue for the BFS
-      - Avoids duplicate requests using a cache
-      - Controls the maximum runtime (max_runtime)
-    """
-
-    G = nx.DiGraph()
-    response_cache = {}
-    session = requests.Session()
-
-    # Adds the initial node
-    G.add_node(title, count=1, visited=False)
-    queue = deque([(title, max_depth)])
-    time_global = time.time()
-
-    while queue:
-        base, depth = queue.popleft()
-
-        # Runtime control
-
-        # Skips if depth = 0 or already visited
-        if depth <= 0 or G.nodes[base].get('visited', False):
-            continue
-
-        # Gets link from cache or API
-        if base in response_cache:
-            links = response_cache[base]
-        else:
-            # Prepares title for API: substitutes spaces with underscore, leaves comma
-            encoded_title = base.replace(" ", "_")
-            url = "https://en.wikipedia.org/w/api.php"
-            params = {
-                "action": "parse",
-                "page": encoded_title,
-                "prop": "text",
-                "format": "json"
-            }
-
-            try:
-                time_global = time.time()
-                response = session.get(url, params=params, timeout=10)
-                response.raise_for_status()
-                data = response.json()
-                # Controls existence of 'parse' field
-                time_current = time.time()
-                if  time_current - time_global > max_runtime:
-
-                    print(f'drop high lat connesion:{time_current - time_global}')
-                    G.nodes[base]['visited'] = True
-                    
-                    continue
-
-                if "parse" not in data or "text" not in data["parse"] or "*" not in data["parse"]["text"]:
-                    print(f"Non parsable or non existing page for '{encoded_title}'")
-                    #print(data)
-                    response_cache[base] = []
-                    continue
-
-                html = data["parse"]["text"]["*"]
-                soup = BeautifulSoup(html, "lxml")
-                content_div = soup.find("div", class_="mw-parser-output")
-
-                links = []
-                seen_titles = set()
-                if content_div:
-                    for a in content_div.find_all("a", href=True):
-                        href = a["href"]
-                        if href.startswith("/wiki/") and (":" not in href and "#" not in href):
-                            title_link = a.get("title")
-                            if title_link and title_link not in seen_titles:
-                                links.append(title_link)
-                                seen_titles.add(title_link)
-                                if len(links) >= limit:
-                                    break
-
-                response_cache[base] = links
-
-            except requests.exceptions.HTTPError as http_err:
-                print(f"HTTP error su '{base}': {http_err}")
-                response_cache[base] = []
-                continue
-            except requests.exceptions.Timeout:
-                print(f"Request timed out for '{base}'.")
-                response_cache[base] = []
-                continue
-            except requests.exceptions.RequestException as err:
-                print(f"Request error for '{base}': {err}")
-                response_cache[base] = []
-                continue
-
-        # Adds links to graph and to queue
-        for link in links:
-            if not G.has_node(link):
-                G.add_node(link, count=1, visited=False)
-            else:
-                G.nodes[link]['count'] += 1
-
-            if not G.has_edge(base, link):
-                G.add_edge(base, link)
-
-            if not G.nodes[link]['visited']:
-                queue.append((link, depth - 1))
-
-        # Flags as visited
-        G.nodes[base]['visited'] = True
-
-    return G
-
 
 async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int):
     """
@@ -508,7 +269,8 @@ def draw_and_save_graph(G: nx.DiGraph,
       font_size    : Size of the labels' font.
       layout       : Type of layout: "spring", "kamada_kawai", "circular", "shell"…
     """
-
+    
+    matplotlib.use("Agg")  # usa un backend che salva su file, niente finestre
     # Choose the layout
     if layout == "spring":
         pos = nx.spring_layout(G, seed=42)
@@ -546,7 +308,6 @@ def batch_generator(df:pd.DataFrame, batch_size:int):
 #  Test example
 if __name__ == "__main__":
     # Builds a directed graph
-    G = nx.DiGraph()
     start_page = "Q2"
     conn = Wiki_high_conn()
     limit = 10      # Max number of links per page
