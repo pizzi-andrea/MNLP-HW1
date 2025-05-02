@@ -1,5 +1,4 @@
 from typing import Any
-import requests
 import requests_cache
 
 
@@ -125,13 +124,3 @@ class Wiki_high_conn:
         Clears the currently installed cache (if any)
         """
         requests_cache.clear()
-
-
-if __name__ == "__main__":
-    print(f"[Test script for module {__file__}]")
-    queris = ["Q1450662", "Q178", "Q223655", "Q1723884"]
-
-    conn = Wiki_high_conn()
-
-    r = conn.get_wikidata2wikipedia(queris)
-    print(r)

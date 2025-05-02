@@ -45,23 +45,26 @@ class Local_Loader(Loader):
         self.limit = limit
 
         if not self.file_path.exists():
-            raise FileNotFoundError(f'file {self.file_path} not found')
+            raise FileNotFoundError(f"file {self.file_path} not found")
 
     def get(self) -> pd.DataFrame:
         """read data from `file_path` and return it"""
         df = None
         if self.file_path.suffix == ".tsv":
             df = pd.read_csv(self.file_path, sep="\t")
-            df = df.drop("Unnamed: 0", axis=1)
+
         elif self.file_path.suffix == ".csv":
             df = pd.read_csv(self.file_path, sep=",")
         else:
             raise TypeError("File format Not supported")
 
+        if "Unnamed:0" in df.columns:
+            df = df.drop("Unnamed: 0", axis=1)
+
         if self.limit:
             return df.iloc[: self.limit, :]
-        else:
-            return df
+
+        return df
 
 
 class CU_Dataset_Factory:
@@ -69,9 +72,8 @@ class CU_Dataset_Factory:
     Builder Class use to generate train or test dataset with required features
     """
 
-    def __init__(self, out_dir: PosixPath | str) -> None:
+    def __init__(self) -> None:
 
-        self.out_dir = PosixPath(out_dir)
         self.conn = Wiki_high_conn()
         self.label_e = LabelEncoder()
 
@@ -82,14 +84,24 @@ class CU_Dataset_Factory:
         # Known features #
         ##################
 
-        self.sgf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_avg", "G_num_components", 
-                    "G_density", "G_largest_component_size"}  # features about wikipedia network
+        self.sgf = {
+            "G_mean_pr",
+            "G_nodes",
+            "G_num_cliques",
+            "G_avg",
+            "G_num_components",
+            "G_density",
+            "G_largest_component_size",
+        }  # features about wikipedia network
         self.pgf = {"languages", "reference", "ambiguos"}  # features about page
         self.pef = {"n_mod", "n_visits"}  # features about users
-        self.id = {"qid", "wiki_name"}  # identification fields
-        self.tf = {"relevant_words", "intro", "full_page"} # features about text for transformers
+        self.id = {"qid", "wiki_name", "name", "item"}  # identification fields
+        self.tf = {
+            "relevant_words",
+            "intro",
+            "full_page",
+        }  # features about text for transformers
         pd.set_option("mode.chained_assignment", None)
-
 
     def __wiki_name(self, qids: list[str]) -> dict[str, str]:
         conn = Wiki_high_conn()
@@ -183,7 +195,9 @@ class CU_Dataset_Factory:
 
         # Batch elaboration
         batch_cc = 0
-        t = tqdm(desc="batch compute", total=len(dataset))  # uses len(dataset) instead of dataset.size
+        t = tqdm(
+            desc="batch compute", total=len(dataset)
+        )
         for batch in batch_generator(dataset, batch_size=batch_s):  # type: ignore
             batch_cc += 1
             t.set_postfix({"batch": batch_cc})
@@ -217,7 +231,7 @@ class CU_Dataset_Factory:
                     join_fe = "wiki_name"
                     mask = list(self.sgf)
                     r = G_factor(
-                        batch[join_fe], batch["qid"], 3, 15, 500, None, threads=16
+                        batch[join_fe], batch["qid"], 3, 15, 150, None, threads=32
                     )
 
                     for c in mask:
@@ -233,13 +247,10 @@ class CU_Dataset_Factory:
 
                 # NUM_USERS
                 elif feature == "n_visits":
-                    join_fe = 'wiki_name'
-                    r = num_users(batch[join_fe], start_date="20150701", end_date="20240430") # interval of almost 10 years
-
-                # IS_DISAMBIGUATION
-                # elif feature == "ambiguos":
-                #    join_fe = 'qid'
-                #    r = is_disambiguation(batch[join_fe], self.conn)
+                    join_fe = "wiki_name"
+                    r = num_users(
+                        batch[join_fe], start_date="20150701", end_date="20240430"
+                    )  # interval of almost 10 years
 
                 # NUM_LANGS
                 elif feature == "num_langs":
@@ -301,16 +312,14 @@ class CU_Dataset_Factory:
         t.close()
         return prc_result
 
-
     def __save_with_format(self, df: pd.DataFrame, path: PosixPath) -> None:
         if path.suffix == ".csv":
-            df.to_csv(path, sep=".", index=False)
+            df.to_csv(path, sep=".", index=False, quoting=1)
         elif path.suffix == ".tsv":
-            df.to_csv(path, sep="\t", index=False)
+            df.to_csv(path, sep="\t", index=False, quoting=1)
         else:
             raise ValueError(f"File exstension {path.suffix} not supported")
         return
-
 
     def __load_with_format(self, path: PosixPath) -> pd.DataFrame:
         if path.suffix == ".csv":
@@ -319,27 +328,33 @@ class CU_Dataset_Factory:
             df = pd.read_csv(path, sep="\t")
         else:
             raise ValueError(f"File exstension {path.suffix} not supported")
-        
+
         return df
 
-
-    def produce(self, loader: Loader, out_file: path.PosixPath | str | None, 
-                enable_feature: list[str], targe_feature: str | None, batch_s: int = 1,
-                load: bool = False, encoding: bool = False) -> pd.DataFrame | None:
+    def produce(
+        self,
+        loader: Loader,
+        out_file: path.PosixPath | str | None,
+        enable_feature: list[str],
+        targe_feature: str | None,
+        batch_s: int = 1,
+        load: bool = False,
+        encoding: bool = False,
+    ) -> pd.DataFrame | None:
         """
-        Transforms Cultural dataset in new argumented version in according to `enable_features[]` list
+        Transforms the Cultural dataset into a new augmented version according to the `enable_feature` list.
 
         Args:
-            loader (Loader): Dataset loader
-            out_file (str | None): File path for saving dataset
-            enable_feature (list[str]): List of features to be added
-            targe_feature (str | None): Target feature to be used for training
-            batch_s (int, optional): Batch size. Defaults to 1.
-            load (bool, optional): Load dataset from file. Defaults to False.
-            encoding (bool, optional): Encode categorical variables. Defaults to False.
+            loader (Loader): The data loader instance used to access the dataset.
+            out_file (path.PosixPath | str | None): Path to save the transformed dataset. If None, no file is saved.
+            enable_feature (list[str]): List of feature names to be enabled or used during transformation.
+            targe_feature (str | None): Optional target feature to be included or predicted. If None, no target is used.
+            batch_s (int, optional): Batch size for processing the dataset. Defaults to 1.
+            load (bool, optional): Whether to load the dataset from disk if available. Defaults to False.
+            encoding (bool, optional): Whether to apply encoding to the dataset features. Defaults to False.
 
         Returns:
-            pd.DataFrame | None: Dataset with new features
+            pd.DataFrame | None: The transformed dataset as a DataFrame, or None if loading/saving is handled externally.
         """
 
         out_file = None if not out_file else PosixPath(out_file)
@@ -354,7 +369,8 @@ class CU_Dataset_Factory:
         dataset["wiki_name"] = (
             dataset["qid"].map(self.__wiki_name(dataset["qid"].to_list())).fillna(0)
         )
-        dataset = dataset.drop(["item", "name"], axis=1)
+       
+
         # Function that calls back __produce and returns the new dataset
         prc = self.__produce(dataset, enable_feature, targe_feature, batch_s, encoding)
         self.__save_with_format(prc, out_file)

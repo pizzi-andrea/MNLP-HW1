@@ -46,7 +46,7 @@ def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list
         params (dict[str, str]): API parameters.
         
     Returns:
-        dict: The JSON response from the Wikipedia API.
+        dict (dict[str,str]): The JSON response from the Wikipedia API.
     """
 
     params = {
@@ -263,8 +263,7 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
     # Initialize columns for raw metrics
     raw_cols = [
-        'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg',
-        'G_num_components', 'G_largest_component_size','G_density'
+        'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg', 'G_density'
     ]
 
     fe = {}
@@ -285,6 +284,8 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         if G.number_of_nodes() == 0:
             continue
         
+        #:debug
+        #draw_and_save_graph(G, 'g.png', figsize=(12,15), dpi=300, layout='kamada_kawai')
        
         # Mean occurrences
         total_count = sum(G.nodes[n].get('count', 0) for n in G.nodes)
@@ -302,10 +303,7 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         # Cliques count
         raw_cliques = sum(1 for _ in nx.find_cliques(UG))
 
-        # Component features
-        components = list(nx.connected_components(UG))
-        component_sizes = [len(c) for c in components]
-        largest_component_size = max(component_sizes)
+        # Graph Density
         density = nx.density(UG)
 
         # Assign metrics
@@ -313,7 +311,6 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         r['G_nodes'] = G.number_of_nodes()
         r['G_num_cliques'] = raw_cliques
         r['G_avg'] = avg_count
-        r['G_largest_component_size'] = largest_component_size
         r['G_density'] = density
         fe[q] = r.copy()
 
@@ -384,7 +381,7 @@ def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
         conn (Wiki_high_conn): An active Wiki_high_conn instance.
 
     Returns:
-        Dict[str, str]: A dictionary mapping each Wikipedia page title to its introductory extract (plain text).
+        dict[str, str]: A dictionary mapping each Wikipedia page title to its introductory extract (plain text).
     """
     titles = queries.to_list()
     params = {
@@ -432,6 +429,14 @@ def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     """
     Extract plain-text of all Wikipedia pages indicated in 'queries',
     automatically dealing with 'continue' blocks of the API.
+
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+
+    Returns:
+        Dict[str, str]: A dictionary mapping each Wikipedia page title to its wikipage (full text).
+
     """
 
     # Join all titles in a single string separated by "|"
@@ -476,6 +481,13 @@ def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
     """
     For each query, return the list of linked page titles,
     skipping links with bad prefixes.
+
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+
+    Returns:
+        Dict[str, str]: A dictionary mapping each Wikipedia page title to its wikipedia links.
     """
 
     skip_prefixes = (
