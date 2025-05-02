@@ -124,6 +124,19 @@ class CU_Dataset_Factory:
 
 
     def __produce(self, dataset: pd.DataFrame, enable_feature: list[str], targe_feature: str | None, batch_s: int = 1, encode: bool = True) -> pd.DataFrame:
+        """
+        Function that creates the new dataset with the required features
+
+        Args:
+            dataset (pd.DataFrame): Input dataset
+            enable_feature (list[str]): List of features to be added
+            targe_feature (str | None): Target feature to be used for training
+            batch_s (int, optional): Batch size. Defaults to 1.
+            encode (bool, optional): Encode categorical variables. Defaults to True.
+            
+        Returns:
+            pd.DataFrame: New dataset with added features
+        """
 
         prc_result = pd.DataFrame()
         extra = []
@@ -317,10 +330,16 @@ class CU_Dataset_Factory:
         Transforms Cultural dataset in new argumented version in according to `enable_features[]` list
 
         Args:
-        
+            loader (Loader): Dataset loader
+            out_file (str | None): File path for saving dataset
+            enable_feature (list[str]): List of features to be added
+            targe_feature (str | None): Target feature to be used for training
+            batch_s (int, optional): Batch size. Defaults to 1.
+            load (bool, optional): Load dataset from file. Defaults to False.
+            encoding (bool, optional): Encode categorical variables. Defaults to False.
 
-
-
+        Returns:
+            pd.DataFrame | None: Dataset with new features
         """
 
         out_file = None if not out_file else PosixPath(out_file)
@@ -335,7 +354,7 @@ class CU_Dataset_Factory:
         dataset["wiki_name"] = (
             dataset["qid"].map(self.__wiki_name(dataset["qid"].to_list())).fillna(0)
         )
-        # dataset = dataset.drop(["item", "name"], axis=1)
+        dataset = dataset.drop(["item", "name"], axis=1)
         # Function that calls back __produce and returns the new dataset
         prc = self.__produce(dataset, enable_feature, targe_feature, batch_s, encoding)
         self.__save_with_format(prc, out_file)

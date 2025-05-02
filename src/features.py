@@ -252,6 +252,13 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
     Returns:
         pd.DataFrame: A DataFrame containing various network metrics for each title.
+
+    Notes:
+        'G_mean_pr': the mean page rank
+        'G_nodes': the number of nodes of the graph
+        'G_num_cliques': the cardinality of a subset of nodes in which every node is connected to every other
+        'G_avg': the average number of visits of a node
+        'G_density': how many times a page appears in the graph
     """
 
     # Initialize columns for raw metrics
