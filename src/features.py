@@ -169,7 +169,7 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
     dominant = set(['enwiki', 'eswiki', 'frwiki', 'dewiki', 'ptwiki', 'itwiki'])
     
     # Gets Wikimedia ids
-    ids = queries['item']
+    ids = queries['qid'].tolist()
     ids = extract_entity_name(ids)
     
     # Performs query using Wikidata APIs
@@ -179,26 +179,22 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
         "props": "sitelinks",
         "format": "json"
     })
-  
-    result = r['entities']
+
+    result = r.get('entities', {})
 
     # Collects titles in the dominant languages
     for page in result:
-        
         q = []
-        for lang, info in result[page]['sitelinks'].items():
+        for lang, info in result[page].get('sitelinks', {}).items():
             if lang in dominant:
                 title = info["title"]
-                q.append((lang.replace('wiki',''),title))
-        
+                q.append((lang.replace('wiki',''), title))
         out[page] = q
 
     # For each page, fetch extracts in the available languages
-    pages = {}
-    
     for page, links in out.items():
+        pages = {}
         for l, link in links:
-            
             r = conn.get_wikipedia(link, params={
                 "action": "query",             # type of action
                 "format": "json",              # response msg format 
@@ -208,27 +204,25 @@ def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
                 "exintro": True,               # expand links
                 "exsectionformat": "plain"     # plaintext
             }, lang=l) # type: ignore
-            
             pages.update(r.get('query', {}).get('pages', {}))
-        
+
         total_words = 0
         valid_pages = 0
         # For each page written in a different language, count words
-        for page_id, _ in pages.items():
+        for page_id in pages:
             extract = pages[page_id].get('extract', '')
             if extract:
                 word_count = len(nltk.word_tokenize(extract))
                 total_words += word_count
                 valid_pages += 1
-        
-       # Compute standard mean 
-        if valid_pages > 0:
-            mean_word_count = total_words //valid_pages
-            
-            queries.loc[queries['item'].str.contains(page, case=False, na=False), 'length_lan'] = mean_word_count
-        else:
-           queries.loc[queries['item'].str.contains(page, case=False, na=False), 'length_lan'] = 0  # If no valid pages found, set word count to 0
 
+        # Compute standard mean
+        if valid_pages > 0:
+            mean_word_count = total_words // valid_pages
+            queries.loc[queries['qid'].str.contains(page, case=False, na=False), 'length_lan'] = mean_word_count
+        else:
+           queries.loc[queries['qid'].str.contains(page, case=False, na=False), 'length_lan'] = 0  # If no valid pages found, set word count to 0
+  
     return queries
 
 
@@ -252,15 +246,18 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
     Returns:
         pd.DataFrame: A DataFrame containing various network metrics for each title.
+
+    Parameters:
+        'G_mean_pr': the mean page rank
+        'G_nodes': the number of nodes of the graph
+        'G_num_clicks': the cardinality of a subset of nodes in which every node is connected to every other
+        'G_avg': the average number of visits of a node
+        'G_density': how many times a page appears in the graph
     """
 
     # Initialize columns for raw metrics
-    raw_cols = [
-        'G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg', 'G_density'
-    ]
-
+    raw_cols = ['G_mean_pr', 'G_nodes', 'G_num_clicks', 'G_avg', 'G_density']
     fe = {}
-    
 
     # Compute raw metrics per query
     for q, qid in zip(titles, qids):
@@ -291,10 +288,9 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
 
         # Undirected graph
         UG = G.to_undirected()
- 
 
-        # Cliques count
-        raw_cliques = sum(1 for _ in nx.find_cliques(UG))
+        # clicks count
+        raw_clicks = sum(1 for _ in nx.find_clicks(UG))
 
         # Graph Density
         density = nx.density(UG)
@@ -302,7 +298,7 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         # Assign metrics
         r['G_mean_pr'] = mean_pager
         r['G_nodes'] = G.number_of_nodes()
-        r['G_num_cliques'] = raw_cliques
+        r['G_num_clicks'] = raw_clicks
         r['G_avg'] = avg_count
         r['G_density'] = density
         fe[q] = r.copy()
@@ -359,8 +355,104 @@ def back_links(queries: pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
     return r
 
 
+###################
+# Users Features #
+###################
+
+
+def num_users(queries: pd.Series, start_date: str, end_date: str) -> dict[str, int]:
+    """
+    Feature extractor: Given a batch of Wikipedia page titles, returns the number of unique users 
+    who have visited each page in a specific interval of time.
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        start_date (str): Start date in YYYYMMDD format.
+        end_date (str): End date in YYYYMMDD format.
+    Returns:
+        dict[str, int]: A dictionary mapping Wikipedia page titles to their unique user visit counts.
+    """
+
+    endpoint = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/{}/daily/{}/{}"
+    result = {}
+    headers = {'User-Agent': 'WikipediaViewsBot/1.0 (dani@gmail.com)'}
+
+    for title in queries.tolist():
+        title_formatted = title.strip().replace(' ', '_')
+        title_encoded = requests.utils.quote(title_formatted, safe='')
+        url = endpoint.format(title_encoded, start_date, end_date)
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            views = sum(item['views'] for item in data.get('items', []))
+            result[title] = views
+        else:
+            result[title] = 0  # if there's an error, return 0 visits
+
+    return result
+
+
+def num_mod(queries:pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
+    """
+    Feature extractor: Given a batch of Wikipedia page titles, returns the number of unique users who have edited each page.
+
+    Args:
+        queries (pd.Series): List of Wikipedia page titles.
+        conn (Wiki_high_conn): An active Wiki_high_conn instance.
+        batch (int, optional): Batch size for API requests. Defaults to 1.
+    
+    Returns:
+        dict[str, int]: A dictionary mapping Wikipedia page titles to their unique user edit counts.
+    """
+
+    # The function uses the MediaWiki API to fetch revision history for each title
+    # The API may have rate limits, so we use a delay between requests if processing a large number of titles
+
+    result = {}
+    for title in queries.tolist():
+        users = set()
+
+        # Build base parameters for this page
+        params = {
+            "action": "query",
+            "format": "json",
+            "prop": "revisions",
+            "rvprop": "user",    # only take the user
+            "rvlimit": "500",    
+            "titles": title
+        }
+
+        while True:
+            # Execute the call
+            try:
+                response = conn.get_wikipedia([title], params)
+                data = response.get("query", {})
+                pages = data.get("pages", {})
+            except requests.HTTPError as err:
+                print(err)
+                result[title] = []
+                break
+
+            # Gather users from all revisions in this batch
+            for page in pages.values():
+                for rev in page.get("revisions", []):
+                    if "user" in rev:
+                        users.add(rev["user"])
+
+            # If continuity token exists, update it and repeat
+            if "continue" in response:
+                params.update(response["continue"])
+            else:
+                break
+
+        # Save the count of unique users
+        result[title] = len(users)
+
+    return result
+ 
+
 ####################################
-# Features for Transformers models #
+# Features for Transformers Models #
 ####################################
 
 
@@ -529,102 +621,6 @@ def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
     return r
 
 
-###################
-# Users Features #
-###################
-
-
-def num_users(queries: pd.Series, start_date: str, end_date: str) -> dict[str, int]:
-    """
-    Feature extractor: Given a batch of Wikipedia page titles, returns the number of unique users 
-    who have visited each page in a specific interval of time.
-    Args:
-        queries (pd.Series): List of Wikipedia page titles.
-        start_date (str): Start date in YYYYMMDD format.
-        end_date (str): End date in YYYYMMDD format.
-    Returns:
-        dict[str, int]: A dictionary mapping Wikipedia page titles to their unique user visit counts.
-    """
-
-    endpoint = "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user/{}/daily/{}/{}"
-    result = {}
-    headers = {'User-Agent': 'WikipediaViewsBot/1.0 (dani@gmail.com)'}
-
-    for title in queries.tolist():
-        title_formatted = title.strip().replace(' ', '_')
-        title_encoded = requests.utils.quote(title_formatted, safe='')
-        url = endpoint.format(title_encoded, start_date, end_date)
-        response = requests.get(url, headers=headers)
-
-        if response.status_code == 200:
-            data = response.json()
-            views = sum(item['views'] for item in data.get('items', []))
-            result[title] = views
-        else:
-            result[title] = 0  # if there's an error, return 0 visits
-
-    return result
-
-
-def num_mod(queries:pd.Series, conn:Wiki_high_conn) -> dict[str, int]:
-    """
-    Feature extractor: Given a batch of Wikipedia page titles, returns the number of unique users who have edited each page.
-
-    Args:
-        queries (pd.Series): List of Wikipedia page titles.
-        conn (Wiki_high_conn): An active Wiki_high_conn instance.
-        batch (int, optional): Batch size for API requests. Defaults to 1.
-    
-    Returns:
-        dict[str, int]: A dictionary mapping Wikipedia page titles to their unique user edit counts.
-    """
-
-    # The function uses the MediaWiki API to fetch revision history for each title
-    # The API may have rate limits, so we use a delay between requests if processing a large number of titles
-
-    result = {}
-    for title in queries.tolist():
-        users = set()
-
-        # Build base parameters for this page
-        params = {
-            "action": "query",
-            "format": "json",
-            "prop": "revisions",
-            "rvprop": "user",    # only take the user
-            "rvlimit": "500",    
-            "titles": title
-        }
-
-        while True:
-            # Execute the call
-            try:
-                response = conn.get_wikipedia([title], params)
-                data = response.get("query", {})
-                pages = data.get("pages", {})
-            except requests.HTTPError as err:
-                print(err)
-                result[title] = []
-                break
-
-            # Gather users from all revisions in this batch
-            for page in pages.values():
-                for rev in page.get("revisions", []):
-                    if "user" in rev:
-                        users.add(rev["user"])
-
-            # If continuity token exists, update it and repeat
-            if "continue" in response:
-                params.update(response["continue"])
-            else:
-                break
-
-        # Save the count of unique users
-        result[title] = len(users)
-
-    return result
-    
-
 if __name__ == '__main__':
     df = pd.DataFrame({'wiki_name':['Rome', 'London', 'A', 'Python (programming language)'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
    
@@ -642,4 +638,6 @@ if __name__ == '__main__':
     #print(num_mod(df['wiki_name'], conn))
     #print(relevant_words(df['wiki_name'], conn))
     #print(page_intros(df['wiki_name'], conn))
-    print(num_users(df['wiki_name'], start_date="20150701", end_date="20250430"))
+    #print(num_users(df['wiki_name'], start_date="20150701", end_date="20250430"))
+    #print(df.columns)
+    print(langs_length(df, conn))
