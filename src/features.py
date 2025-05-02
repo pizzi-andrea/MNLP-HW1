@@ -250,13 +250,13 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
     Parameters:
         'G_mean_pr': the mean page rank
         'G_nodes': the number of nodes of the graph
-        'G_num_clicks': the cardinality of a subset of nodes in which every node is connected to every other
+        'G_num_cliques': the cardinality of a subset of nodes in which every node is connected to every other
         'G_avg': the average number of visits of a node
         'G_density': how many times a page appears in the graph
     """
 
     # Initialize columns for raw metrics
-    raw_cols = ['G_mean_pr', 'G_nodes', 'G_num_clicks', 'G_avg', 'G_density']
+    raw_cols = ['G_mean_pr', 'G_nodes', 'G_num_cliques', 'G_avg', 'G_density']
     fe = {}
 
     # Compute raw metrics per query
@@ -289,8 +289,8 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         # Undirected graph
         UG = G.to_undirected()
 
-        # clicks count
-        raw_clicks = sum(1 for _ in nx.find_clicks(UG))
+        # cliques count
+        raw_cliques = sum(1 for _ in nx.find_cliques(UG))
 
         # Graph Density
         density = nx.density(UG)
@@ -298,7 +298,7 @@ def G_factor(titles: pd.Series,qids: pd.Series, limit: int, depth: int, max_node
         # Assign metrics
         r['G_mean_pr'] = mean_pager
         r['G_nodes'] = G.number_of_nodes()
-        r['G_num_clicks'] = raw_clicks
+        r['G_num_cliques'] = raw_cliques
         r['G_avg'] = avg_count
         r['G_density'] = density
         fe[q] = r.copy()

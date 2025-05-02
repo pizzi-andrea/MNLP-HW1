@@ -76,11 +76,11 @@ class CU_Dataset_Factory:
         self.label_e = LabelEncoder()
 
         ##################
-        # Known features #
+        # Known Features #
         ##################
 
-        self.sgf = {"G_mean_pr", "G_nodes", "G_num_clicks", "G_avg", "G_density"}  # features about wikipedia network
-        self.pgf = {"languages", "reference", "ambiguos"}  # features about page
+        self.sgf = {"G_mean_pr", "G_nodes", "G_num_cliques", "G_avg", "G_density"}  # features about wikipedia network
+        self.pgf = {"languages", "reference", "num_langs", "length_lan"}  # features about page
         self.pef = {"n_mod", "n_visits"}  # features about users
         self.id = {"qid", "wiki_name", "name", "item"}  # identification fields
         self.tf = {"relevant_words", "intro", "full_page"}  # features about text for transformers
@@ -174,7 +174,7 @@ class CU_Dataset_Factory:
             original_batch_len = len(batch)
 
             ###############################
-            # extract additional features #
+            # Extract Additional Features #
             ###############################
 
             for feature in extra:
@@ -200,9 +200,7 @@ class CU_Dataset_Factory:
                 elif feature == "G":
                     join_fe = "wiki_name"
                     mask = list(self.sgf)
-                    r = G_factor(
-                        batch[join_fe], batch["qid"], 3, 15, 150, None, threads=32
-                    )
+                    r = G_factor(batch[join_fe], batch["qid"], 3, 15, 150, None, threads=32)
 
                     for c in mask:
                         d = r.set_index(join_fe)[c].to_dict()
@@ -251,7 +249,7 @@ class CU_Dataset_Factory:
                     raise ValueError(f"Label:{feature} not valid")
 
                 ################
-                # add features #
+                # Add Features #
                 ################
 
                 delta = prc_result[join_fe].map(r)
@@ -272,8 +270,7 @@ class CU_Dataset_Factory:
                 new_feature = (
                     prc_result[feature].replace(old, fill).astype(ty).add(delta)
                     if ty == float
-                    else prc_result[feature].astype(ty).replace(old, fill) + delta
-                )
+                    else prc_result[feature].astype(ty).replace(old, fill) + delta)
 
                 prc_result.loc[:, feature] = new_feature
 
@@ -340,13 +337,7 @@ if __name__ == "__main__":
     l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", "validation", None)
     d = CU_Dataset_Factory(out_dir=".")
     # print(d.validation.head(10))
-    frame = d.produce(
-        l,
-        "validation_test.tsv",
-        batch_s=32,
-        enable_feature=["full_page"],
-        targe_feature="label",
-    )
+    frame = d.produce(l, "validation_test.tsv", batch_s=32, enable_feature=["full_page"], targe_feature="label",)
     print(frame.head(5))
     d = pd.read_csv("validation_test.tsv", sep="\t")
     print(d.columns)
