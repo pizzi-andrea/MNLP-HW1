@@ -77,9 +77,6 @@ class CU_Dataset_Factory:
         self.conn = Wiki_high_conn()
         self.label_e = LabelEncoder()
 
-        if not self.out_dir.exists():
-            mkdir(self.out_dir)
-
         ##################
         # Known features #
         ##################
