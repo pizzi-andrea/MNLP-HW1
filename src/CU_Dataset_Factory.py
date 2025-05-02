@@ -17,9 +17,7 @@ from utils import batch_generator
 class Hf_Loader(Loader):
     """Dataset Loader from Hugging-Face Hub"""
 
-    def __init__(
-        self, hf_url: str, split: str | NamedSplit, limit: int | None = None
-    ) -> None:
+    def __init__(self, hf_url: str, split: str | NamedSplit, limit: int | None = None) -> None:
         super().__init__()
         self.hf_url = hf_url
         self.split = split
@@ -84,23 +82,11 @@ class CU_Dataset_Factory:
         # Known features #
         ##################
 
-        self.sgf = {
-            "G_mean_pr",
-            "G_nodes",
-            "G_num_cliques",
-            "G_avg",
-            "G_num_components",
-            "G_density",
-            "G_largest_component_size",
-        }  # features about wikipedia network
+        self.sgf = {"G_mean_pr", "G_nodes", "G_num_clicks", "G_avg", "G_density"}  # features about wikipedia network
         self.pgf = {"languages", "reference", "ambiguos"}  # features about page
         self.pef = {"n_mod", "n_visits"}  # features about users
         self.id = {"qid", "wiki_name", "name", "item"}  # identification fields
-        self.tf = {
-            "relevant_words",
-            "intro",
-            "full_page",
-        }  # features about text for transformers
+        self.tf = {"relevant_words", "intro", "full_page"}  # features about text for transformers
         pd.set_option("mode.chained_assignment", None)
 
     def __wiki_name(self, qids: list[str]) -> dict[str, str]:
@@ -109,7 +95,6 @@ class CU_Dataset_Factory:
         def fetch_batch(qids_batch: list[str], conn: Wiki_high_conn) -> dict[str, str]:
 
             # Parameters for Wikidata's API
-
             params = {
                 "action": "wbgetentities",
                 "sites": "wikipedia",
@@ -168,17 +153,9 @@ class CU_Dataset_Factory:
 
             prc_result.insert(0, feature, None)  # add empty column
             if feature in dataset.columns.tolist():  # iterate over enabled features
-                if (
-                    encode
-                    and not (feature in self.id)
-                    and (
-                        dataset[feature].dtype == pd.StringDtype()
-                        or dataset[feature].dtype == object
-                    )
-                ):
-                    dummies = pd.get_dummies(
-                        dataset[feature], dtype=pd.Int32Dtype(), prefix=feature
-                    )
+                if (encode and not (feature in self.id) and 
+                    (dataset[feature].dtype == pd.StringDtype() or dataset[feature].dtype == object)):
+                    dummies = pd.get_dummies(dataset[feature], dtype=pd.Int32Dtype(), prefix=feature)
                     prc_result = prc_result.drop(feature, axis=1)
                     prc_result = pd.concat([prc_result, dummies], axis=1)
                 else:
@@ -188,16 +165,12 @@ class CU_Dataset_Factory:
                 prc_result[feature] = 0
 
             if targe_feature:
-                prc_result[targe_feature] = self.label_e.fit_transform(
-                    dataset[targe_feature]
-                )
+                prc_result[targe_feature] = self.label_e.fit_transform(dataset[targe_feature])
             extra.sort()
 
         # Batch elaboration
         batch_cc = 0
-        t = tqdm(
-            desc="batch compute", total=len(dataset)
-        )
+        t = tqdm(desc="batch compute", total=len(dataset))
         for batch in batch_generator(dataset, batch_size=batch_s):  # type: ignore
             batch_cc += 1
             t.set_postfix({"batch": batch_cc})
@@ -328,19 +301,10 @@ class CU_Dataset_Factory:
             df = pd.read_csv(path, sep="\t")
         else:
             raise ValueError(f"File exstension {path.suffix} not supported")
-
         return df
 
-    def produce(
-        self,
-        loader: Loader,
-        out_file: path.PosixPath | str | None,
-        enable_feature: list[str],
-        targe_feature: str | None,
-        batch_s: int = 1,
-        load: bool = False,
-        encoding: bool = False,
-    ) -> pd.DataFrame | None:
+    def produce(self, loader: Loader, out_file: path.PosixPath | str | None, enable_feature: list[str], 
+                targe_feature: str | None, batch_s: int = 1, load: bool = False, encoding: bool = False) -> pd.DataFrame | None:
         """
         Transforms the Cultural dataset into a new augmented version according to the `enable_feature` list.
 
@@ -366,12 +330,9 @@ class CU_Dataset_Factory:
         dataset = loader.get()
 
         dataset["qid"] = dataset["item"].str.extract(r"(Q\d+)", expand=False)
-        dataset["wiki_name"] = (
-            dataset["qid"].map(self.__wiki_name(dataset["qid"].to_list())).fillna(0)
-        )
-       
+        dataset["wiki_name"] = (dataset["qid"].map(self.__wiki_name(dataset["qid"].to_list())).fillna(0))
 
-        # Function that calls back __produce and returns the new dataset
+        # Calls back __produce and returns the new dataset
         prc = self.__produce(dataset, enable_feature, targe_feature, batch_s, encoding)
         self.__save_with_format(prc, out_file)
 
