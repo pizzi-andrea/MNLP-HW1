@@ -46,6 +46,10 @@ pip3 install beautifulsoup4
 pip3 install seaborn
 pip3 install datasets
 pip3 install lxml
+
+# mnlp tools
+pip3 install nltk
+
 # install ml tools (and torch system)
 echo '[installing ML tools]'
 nvidia-smi >> /dev/null

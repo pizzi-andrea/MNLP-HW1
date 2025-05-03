@@ -19,6 +19,7 @@ echo '[installing ML tools]'
 pip3 install scikit-learn
 pip3 install torchmetrics
 # Hugging Face dependecies
+pip3 install huggingface_hub
 pip3 install transformers
 pip3 install datasets
 pip3 install evaluate 
