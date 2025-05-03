@@ -200,7 +200,7 @@ class CU_Dataset_Factory:
                 elif feature == "G":
                     join_fe = "wiki_name"
                     mask = list(self.sgf)
-                    r = G_factor(batch[join_fe], batch["qid"], 3, 15, 150, None, threads=32)
+                    r = G_factor(batch[join_fe], batch["qid"], 3, 6, 1_100, None, threads=16)
 
                     for c in mask:
                         d = r.set_index(join_fe)[c].to_dict()
@@ -281,7 +281,7 @@ class CU_Dataset_Factory:
 
     def __save_with_format(self, df: pd.DataFrame, path: PosixPath) -> None:
         if path.suffix == ".csv":
-            df.to_csv(path, sep=".", index=False, quoting=1)
+            df.to_csv(path, sep=",", index=False, quoting=1)
         elif path.suffix == ".tsv":
             df.to_csv(path, sep="\t", index=False, quoting=1)
         else:

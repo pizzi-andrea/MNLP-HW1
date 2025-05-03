@@ -5,20 +5,20 @@ from CU_Dataset_Factory import Hf_Loader, Local_Loader
 """
 if __name__ == '__main__':
     print('Cultural Dataset argumentation start')
-    factory = CU_Dataset_Factory('.')
+    factory = CU_Dataset_Factory()
     train_l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", 'train')
     validation_l = Hf_Loader("sapienzanlp/nlp2025_hw1_cultural_dataset", 'validation')
     test_l = Local_Loader('test_unlabeled.csv')
 
     # dataset generation for ML-Model
-    factory.produce(train_l, 'train.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type'], 'label', 49)
-    factory.produce(validation_l, 'validation.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type'], 'label', 49)
-    factory.produce(test_l, "test.csv", ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type'], None, 45)
+    #factory.produce(train_l, 'train.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], 'label', 45)
+    #factory.produce(validation_l, 'validation.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], 'label', 45)
+    #factory.produce(test_l, "test.tsv", ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], None, 45)
     
     # Dataset generation for Transformers-Model
-    factory.produce(train_l, 'd_tr_train.tsv', ['description'], 'label', 45)
-    factory.produce(validation_l, 'd_tr_validation.tsv', ['description'], 'label', 45)
-    factory.produce(test_l, 'd_tr_test.tsv', ['description'], None, 45)
+    factory.produce(train_l, 'd_tr_train.csv', ['description'], 'label', 45)
+    factory.produce(validation_l, 'd_tr_validation.csv', ['description'], 'label', 45)
+    factory.produce(test_l, 'd_tr_test.csv', ['description'], None, 45)
 
     factory.produce(train_l, 'i_tr_train.csv', ['intro'], 'label', 45)
     factory.produce(validation_l, 'i_tr_validation.csv', ['intro'], 'label', 45)

@@ -36,7 +36,7 @@ def is_disambiguation(queries: pd.Series, conn):
     return results
 
 
-def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
+def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, int]:
     """
     Features Exstractor: Given a batch of Wikipedia links, 
     determines how many references each page has in `queries`
@@ -70,7 +70,7 @@ def count_references(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list
     return r
 
 
-def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
+def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, int]:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
     of the top 10 Wikimedia languages each page is available.
@@ -111,7 +111,7 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[s
     return f
 
 
-def num_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
+def num_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, int]:
     """
     Feature extractor: Given a batch of Wikidata entity links, determines in how many
     languages each page is available.
@@ -148,82 +148,78 @@ def num_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, list[str]]:
     return r
 
 
-def langs_length(queries: pd.DataFrame, conn: Wiki_high_conn) -> pd.DataFrame:
-    """
-    Feature extractor: Given a batch of Wikidata entity links, determines how many words each page 
-    of the top 10 Wikimedia languages contains.
+import nltk
+import pandas as pd
 
-    Top languages considered: ['en', 'es', 'fr', 'de', 'ru', 'zh', 'pt', 'ar', 'it', 'ja']
-    
+def langs_length(queries: pd.Series, conn) -> dict[str, int]:
+    """
+    Estrae il numero medio di parole nei primi paragrafi Wikipedia di una voce Wikidata,
+    nelle versioni localizzate delle lingue dominanti.
+
     Args:
-        queries (list[str]): List of Wikidata entity URLs.
-        conn (Wiki_high_conn): An active Wiki_high_conn instance.
-        batch (int, optional): Batch size for API requests. Defaults to 1.
+        queries (pd.Series): Lista di QID Wikidata (es: 'Q28865')
+        conn (Wiki_high_conn): Oggetto con i metodi .get_wikidata e .get_wikipedia
 
     Returns:
-        dict[str, float]: A dictionary mapping entity IDs to average word count of available languages.
+        dict[str, int]: Dizionario {qid: numero_medio_parole}
     """
-    
-    result = {}
-    out = {}
-    dominant = set(['enwiki', 'eswiki', 'frwiki', 'dewiki', 'ptwiki', 'itwiki'])
-    
-    # Gets Wikimedia ids
-    ids = queries['qid'].tolist()
-    ids = extract_entity_name(ids)
-    
-    # Performs query using Wikidata APIs
-    r = conn.get_wikidata(ids, params={
+    nltk.download('punkt', quiet=True)
+
+    qids = queries.tolist()
+    dominant = {'eswiki', 'frwiki', 'dewiki', 'ptwiki', 'itwiki', 'enwiki'}
+    qid_to_langtitles = {}
+
+    # Query Wikidata per ottenere sitelinks
+    response = conn.get_wikidata(qids, params={
         "action": "wbgetentities",
-        "ids": "|".join(ids),
         "props": "sitelinks",
         "format": "json"
     })
 
-    result = r.get('entities', {})
+    entities = response.get('entities', {})
 
-    # Collects titles in the dominant languages
-    for page in result:
-        q = []
-        for lang, info in result[page].get('sitelinks', {}).items():
-            if lang in dominant:
-                title = info["title"]
-                q.append((lang.replace('wiki',''), title))
-        out[page] = q
+    # Costruisci mappatura: QID → [(lang, title), ...]
+    for qid, data in entities.items():
+        lang_titles = []
+        for sitelink_key, info in data.get('sitelinks', {}).items():
+            if sitelink_key in dominant:
+                lang = sitelink_key.replace('wiki', '')
+                title = info['title']
+                lang_titles.append((lang, title))
+        qid_to_langtitles[qid] = lang_titles
 
-    # For each page, fetch extracts in the available languages
-    for page, links in out.items():
-        pages = {}
-        for l, link in links:
-            r = conn.get_wikipedia(link, params={
-                "action": "query",             # type of action
-                "format": "json",              # response msg format 
-                "titles": [link],              # pages id
-                "prop": "extracts",            # required property
-                "explaintext": True,           # get plaintext
-                "exintro": True,               # expand links
-                "exsectionformat": "plain"     # plaintext
-            }, lang=l) # type: ignore
-            pages.update(r.get('query', {}).get('pages', {}))
+    # Ora interroga ogni pagina in ciascuna lingua e calcola word count
+    qid_to_avg_words = {}
 
+    for qid, lang_titles in qid_to_langtitles.items():
         total_words = 0
         valid_pages = 0
-        # For each page written in a different language, count words
-        for page_id in pages:
-            extract = pages[page_id].get('extract', '')
-            if extract:
-                word_count = len(nltk.word_tokenize(extract))
-                total_words += word_count
-                valid_pages += 1
 
-        # Compute standard mean
-        if valid_pages > 0:
-            mean_word_count = total_words // valid_pages
-            queries.loc[queries['qid'].str.contains(page, case=False, na=False), 'length_lan'] = mean_word_count
-        else:
-           queries.loc[queries['qid'].str.contains(page, case=False, na=False), 'length_lan'] = 0  # If no valid pages found, set word count to 0
-  
-    return queries
+        for lang, title in lang_titles:
+            conn.set_lang(lang)
+            r = conn.get_wikipedia([title], params={
+                "action": "query",
+                "format": "json",
+                "prop": "extracts",
+                "explaintext": True,
+                "exintro": True,
+                "exsectionformat": "plain"
+            })  # type: ignore
+
+            pages = r.get('query', {}).get('pages', {})
+            for page_data in pages.values():
+                extract = page_data.get('extract', '')
+                if extract:
+                    word_count = len(nltk.word_tokenize(extract))
+                    total_words += word_count
+                    valid_pages += 1
+
+        
+        qid_to_avg_words[qid] = int(total_words // (valid_pages + 0.1))
+        
+
+    return qid_to_avg_words
+
 
 
 ####################
@@ -495,6 +491,7 @@ def page_intros(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
             title = page.get("title", "")
             if "missing" in page:
                 # Page does not exist; leave empty
+                pages[title] = "[NO_WIKI]"
                 continue
             extract = page.get("extract", "")
             # Concatenate new fragment
@@ -547,7 +544,7 @@ def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
             title = page.get("title", "")
             if "missing" in page:
                 # Page not found
-                results[title] = ""
+                pages[title] = "[NO_WIKI]"
             else:
                 # The 'extract' field is already plain-text
                 results[title] =  results.get(title, '') + page.get("extract", "")
@@ -622,7 +619,7 @@ def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
 
 
 if __name__ == '__main__':
-    df = pd.DataFrame({'wiki_name':['Rome', 'London', 'A', 'Python (programming language)'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
+    df = pd.DataFrame({'wiki_name':['Rome', 'London', 'Flandres (Bélgica)', 'Python (programming language)'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
    
     conn = Wiki_high_conn()
 
@@ -640,4 +637,4 @@ if __name__ == '__main__':
     #print(page_intros(df['wiki_name'], conn))
     #print(num_users(df['wiki_name'], start_date="20150701", end_date="20250430"))
     #print(df.columns)
-    print(langs_length(df, conn))
+    print(langs_length(df['qid'], conn))
