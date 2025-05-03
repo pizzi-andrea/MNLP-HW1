@@ -14,6 +14,7 @@ class Wiki_high_conn:
         Args:
             default_lang (str): Default language for Wikipedia queries.
         """
+
         self._default_lang = default_lang
         requests_cache.clear()
         requests_cache.install_cache(
@@ -30,9 +31,7 @@ class Wiki_high_conn:
         """
         self._default_lang = lang
 
-    def get_wikipedia(
-        self, queries: list[str], params: dict[str, str], lang: str = ""
-    ) -> dict[str, Any]:
+    def get_wikipedia(self, queries: list[str], params: dict[str, str], lang: str = "") -> dict[str, Any]:
         """
         Performs a batch request to Wikipedia API.
 
@@ -43,6 +42,7 @@ class Wiki_high_conn:
         Returns:
             dict: The JSON response from the Wikipedia API.
         """
+
         if lang == "":
             lang = self._default_lang
         url = f"https://{lang}.wikipedia.org/w/api.php"
@@ -52,13 +52,10 @@ class Wiki_high_conn:
         response = self.session.get(url, params=params)
         response.raise_for_status()
         data = response.json()
-        
 
         return data
 
-    def get_wikidata(
-        self, queries: list[str], params: dict[str, str]
-    ) -> dict[str, Any]:
+    def get_wikidata(self, queries: list[str], params: dict[str, str]) -> dict[str, Any]:
         """
         Performs a batch request to the Wikidata API.
 
@@ -69,6 +66,7 @@ class Wiki_high_conn:
         Returns:
             dict: The JSON response from the Wikidata API.
         """
+
         url = "https://www.wikidata.org/w/api.php"
 
         params["format"] = "json"
@@ -77,14 +75,10 @@ class Wiki_high_conn:
         response = self.session.get(url, params=params)
         response.raise_for_status()
         data = response.json()
-            
-       
 
         return data
 
-    def get_wikidata2wikipedia(
-        self, queriesId: list[str], feature: str = ""
-    ) -> dict[str, str]:
+    def get_wikidata2wikipedia(self, queriesId: list[str], feature: str = "") -> dict[str, str]:
         """
         Returns a map {QID: Wikipedia title} for every specified QID.
 
@@ -95,6 +89,7 @@ class Wiki_high_conn:
         Returns:
             dict[str, str]: QID Map → Wikipedia title (in language self._default_lang).
         """
+
         p = {
             "action": "wbgetentities",
             "sites": "wikipedia",
@@ -108,7 +103,7 @@ class Wiki_high_conn:
         qid_to_title = {}
         for qid, data in r.items():
             sitelinks = data.get("sitelinks", {})
-            # swith-case simulation
+            # Swith-case simulation
             if feature == "name":
                 lang_key = f"{self._default_lang}wiki"
                 title = sitelinks.get(lang_key, {}).get("title", "")

@@ -97,7 +97,6 @@ def dominant_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, int]:
     except requests.HTTPError as err:
         print(err)
         return {}
-
     
     result:dict =r.get('entities', {})
 
@@ -139,37 +138,33 @@ def num_langs(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, int]:
 
     r = {}
     for page in result:
-        
         sl = list(result[page].get('sitelinks', {}).keys())
         lg = [l.removesuffix('wiki') for l in sl] 
-        
         r[page] = len(lg)
     
     return r
 
 
-import nltk
-import pandas as pd
-
 def langs_length(queries: pd.Series, conn) -> dict[str, int]:
     """
-    Estrae il numero medio di parole nei primi paragrafi Wikipedia di una voce Wikidata,
-    nelle versioni localizzate delle lingue dominanti.
+    Extracts mean word count of first paragraphs from Wikipedia pages of a Wikidata entity,
+    in the localized versions of the dominant languages.
 
     Args:
-        queries (pd.Series): Lista di QID Wikidata (es: 'Q28865')
-        conn (Wiki_high_conn): Oggetto con i metodi .get_wikidata e .get_wikipedia
+        queries (pd.Series): List of QID Wikidata (es: 'Q28865')
+        conn (Wiki_high_conn): Object with methods .get_wikidata and .get_wikipedia
 
     Returns:
-        dict[str, int]: Dizionario {qid: numero_medio_parole}
+        dict[str, int]: Dictionary {qid: mean_word_count}
     """
+
     nltk.download('punkt', quiet=True)
 
     qids = queries.tolist()
     dominant = {'eswiki', 'frwiki', 'dewiki', 'ptwiki', 'itwiki', 'enwiki'}
     qid_to_langtitles = {}
 
-    # Query Wikidata per ottenere sitelinks
+    # Wikidata query to get sitelinks
     response = conn.get_wikidata(qids, params={
         "action": "wbgetentities",
         "props": "sitelinks",
@@ -178,7 +173,7 @@ def langs_length(queries: pd.Series, conn) -> dict[str, int]:
 
     entities = response.get('entities', {})
 
-    # Costruisci mappatura: QID → [(lang, title), ...]
+    # Build mapping: QID → [(lang, title), ...]
     for qid, data in entities.items():
         lang_titles = []
         for sitelink_key, info in data.get('sitelinks', {}).items():
@@ -188,7 +183,7 @@ def langs_length(queries: pd.Series, conn) -> dict[str, int]:
                 lang_titles.append((lang, title))
         qid_to_langtitles[qid] = lang_titles
 
-    # Ora interroga ogni pagina in ciascuna lingua e calcola word count
+    # Queries every page in any language and computes word count
     qid_to_avg_words = {}
 
     for qid, lang_titles in qid_to_langtitles.items():
@@ -213,13 +208,10 @@ def langs_length(queries: pd.Series, conn) -> dict[str, int]:
                     word_count = len(nltk.word_tokenize(extract))
                     total_words += word_count
                     valid_pages += 1
-
         
         qid_to_avg_words[qid] = int(total_words // (valid_pages + 0.1))
-        
 
     return qid_to_avg_words
-
 
 
 ####################
@@ -533,7 +525,6 @@ def page_full(queries: pd.Series, conn: Wiki_high_conn) -> dict[str, str]:
     while True:
 
         try:
-
             data = conn.get_wikipedia(queries.to_list(), params)
         except requests.HTTPError as err:
             print(err)
@@ -612,14 +603,13 @@ def relevant_words(queries: pd.Series, conn) -> dict[str, list[str]]:
             r = {}
             for k, v in page_links.items():
                 r[k] = ','.join(v)
-
             break
 
     return r
 
 
 if __name__ == '__main__':
-    df = pd.DataFrame({'wiki_name':['Rome', 'London', 'Flandres (Bélgica)', 'Python (programming language)'], 'qid': ['Q220', 'Q2', 'Q234', 'Q28865']})
+    df = pd.DataFrame({'wiki_name':['Rome', 'London', 'Flandres (Bélgica)', 'Python (programming language)'], 'qid': ['Q220', 'Q84', 'Q234', 'Q28865']})
    
     conn = Wiki_high_conn()
 

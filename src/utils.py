@@ -54,6 +54,7 @@ def extract_entity_name(url:pd.Series) -> list[str]:
 
     return [l.strip().split("/")[-1].replace("_", " ") for l in url]
 
+
 async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int):
     """
     Fetches a Wikipedia page, extracts internal links,
@@ -79,8 +80,7 @@ async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int
                 await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff before doing another request
                 continue
             else:
-                raise RuntimeError(f"Failed to fetch page '{title}'. Error: {e}") from e
-        
+                raise RuntimeError(f"Failed to fetch page '{title}'. Error: {e}") from e   
 
     # Parse HTML and extract main content
     try:
@@ -137,6 +137,7 @@ async def fetch_and_parse(session: aiohttp.ClientSession, title: str, limit: int
 
 
 async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
+
     # 1) Get the title of the EN Wikipedia page from Wikidata
     wd_url = "https://www.wikidata.org/w/api.php"
     wd_params = {
@@ -151,14 +152,7 @@ async def get_name_from_wikidata(conn:aiohttp.ClientSession, qid:str):
         wd_resp.raise_for_status()
         wd_data =  await wd_resp.json()
 
-    title = (
-        wd_data
-        .get("entities", {})
-        .get(qid, {})
-        .get("sitelinks", {})
-        .get("enwiki", {})
-        .get("title", "")
-    )
+    title = (wd_data.get("entities", {}).get(qid, {}).get("sitelinks", {}).get("enwiki", {}).get("title", ""))
 
     if not title:
         title = ''
@@ -241,6 +235,7 @@ def BFS2_Links_Parallel(qid:str, limit: int, max_depth: int, max_nodes:int|None 
             return loop.run_until_complete(
                 _BFS_Links_Async(qid,limit, max_depth, max_nodes, max_runtime, max_concurrent)
             )
+        
     except RuntimeError:
         # No active loop: we can also use asyncio.run normally
         return asyncio.run(
