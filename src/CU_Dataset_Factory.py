@@ -200,7 +200,7 @@ class CU_Dataset_Factory:
                 elif feature == "G":
                     join_fe = "wiki_name"
                     mask = list(self.sgf)
-                    r = G_factor(batch[join_fe], batch["qid"], 3, 6, 1_100, None, threads=16)
+                    r = G_factor(batch[join_fe], batch["qid"], 4, 6, 5_400, None, threads=8)
 
                     for c in mask:
                         d = r.set_index(join_fe)[c].to_dict()

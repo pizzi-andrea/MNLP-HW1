@@ -11,9 +11,9 @@ if __name__ == '__main__':
     test_l = Local_Loader('test_unlabeled.csv')
 
     # dataset generation for ML-Model
-    #factory.produce(train_l, 'train.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], 'label', 45)
-    #factory.produce(validation_l, 'validation.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], 'label', 45)
-    #factory.produce(test_l, "test.tsv", ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], None, 45)
+    factory.produce(train_l, 'train.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], 'label', 45)
+    factory.produce(validation_l, 'validation.tsv', ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], 'label', 45)
+    factory.produce(test_l, "test.tsv", ['languages', 'num_langs', 'reference', 'n_mod', 'back_links', 'n_visits','G','category', 'subcategory', 'type', 'length_lan'], None, 45)
     
     # Dataset generation for Transformers-Model
     factory.produce(train_l, 'd_tr_train.csv', ['description'], 'label', 45)
